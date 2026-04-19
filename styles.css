@@ -1666,19 +1666,58 @@ th[onclick]:hover { background: var(--blue-lt, #eff6ff); color: var(--primary); 
 }
 .eb-mcq-option input[type="text"] {
   flex:1;padding:5px 8px;border:1.5px solid var(--border-lt);border-radius:5px;font-size:.82rem;outline:none;
+  background:var(--surface);color:var(--text);
 }
 .eb-mcq-option input[type="text"]:focus { border-color:var(--primary); }
 
-/* Exam preview */
-#ebExamPreview h2 { text-align:center;font-size:1.15rem;margin-bottom:4px; }
-#ebExamPreview .ebep-subject { text-align:center;font-size:1rem;font-weight:bold;margin-bottom:3px; }
-#ebExamPreview .ebep-type { text-align:center;font-size:.9rem;margin-bottom:3px; }
-#ebExamPreview .ebep-meta { text-align:center;font-size:.8rem;margin-bottom:.75rem; }
-#ebExamPreview .ebep-sectitle { font-size:.95rem;font-weight:bold;margin:1rem 0 .4rem; }
-#ebExamPreview .ebep-q { font-size:.82rem;margin-bottom:.5rem; }
+/* Also fix instruction inputs visibility */
+.eb-inst-input {
+  flex:1;padding:7px 10px;border:1.5px solid var(--border-lt);border-radius:6px;font-size:.85rem;outline:none;
+  background:var(--surface);color:var(--text);
+}
+
+/* ── EXAM PREVIEW (print-like) ───────────────────────────── */
+#ebExamPreview {
+  background:#fff;color:#000;padding:1.5rem 2rem;font-family:'Times New Roman',serif;
+  border:1px solid #ccc;border-radius:8px;line-height:1.5;
+}
+#ebExamPreview h2 { text-align:center;font-size:1.5rem;font-weight:900;margin-bottom:4px;letter-spacing:.03em; }
+#ebExamPreview .ebep-subject { text-align:center;font-size:1.15rem;font-weight:bold;margin-bottom:3px; }
+#ebExamPreview .ebep-type { text-align:center;font-size:1rem;font-weight:600;margin-bottom:3px; }
+#ebExamPreview .ebep-meta { text-align:center;font-size:.88rem;margin-bottom:.75rem; }
+#ebExamPreview .ebep-sectitle { font-size:1rem;font-weight:900;margin:1rem 0 .4rem;text-align:center;text-transform:uppercase;letter-spacing:.04em; }
+#ebExamPreview .ebep-q { font-size:.88rem;margin-bottom:.6rem; }
 #ebExamPreview .ebep-opts { margin:.25rem 0 .5rem .75rem; }
-#ebExamPreview .ebep-opt { font-size:.82rem;margin-bottom:1px; }
-#ebExamPreview .ebep-line { border-bottom:1px solid #ccc;height:18px;margin-bottom:3px; }
+#ebExamPreview .ebep-opt { font-size:.85rem;margin-bottom:2px; }
+#ebExamPreview .ebep-line { border-bottom:1px solid #aaa;height:22px;margin-bottom:4px; }
+/* MCQ 2-column layout in preview */
+#ebExamPreview .ebep-mcq-grid { display:grid;grid-template-columns:1fr 1fr;gap:.4rem 1.5rem;margin:.3rem 0 .5rem .75rem; }
+/* Short-answer 2x2 matrix in preview */
+#ebExamPreview .ebep-sa-matrix { display:grid;grid-template-columns:1fr 1fr;gap:.5rem 1.5rem;margin:.3rem 0 .5rem; }
+#ebExamPreview .ebep-sa-cell { border:1px solid #ccc;border-radius:4px;padding:.35rem .5rem;min-height:56px; }
+#ebExamPreview .ebep-sa-qnum { font-size:.78rem;font-weight:700;color:#333;margin-bottom:.25rem; }
+/* Response space after structured question */
+#ebExamPreview .ebep-response { margin-top:.3rem; }
+/* Examiner box */
+#ebExamPreview .ebep-examiner-box {
+  float:right;border:2px solid #000;padding:.4rem .75rem;margin-left:1rem;margin-bottom:.5rem;
+  font-size:.75rem;font-weight:700;min-width:110px;text-align:center;
+}
+#ebExamPreview .ebep-examiner-box .ebep-score-line { border-bottom:1.5px solid #000;height:22px;margin:.3rem 0; }
+/* Footer in preview */
+#ebExamPreview .ebep-footer {
+  text-align:center;font-size:.75rem;color:#555;border-top:1px solid #ccc;
+  margin-top:1.5rem;padding-top:.5rem;font-style:italic;
+}
+/* Page 1 cover box */
+#ebExamPreview .ebep-coverbox {
+  border:2px solid #000;padding:.6rem 1rem;margin:1rem 0 1.5rem;font-size:.85rem;
+}
+#ebExamPreview .ebep-coverbox table { width:100%;border-collapse:collapse; }
+#ebExamPreview .ebep-coverbox td { padding:.25rem .4rem;border:1px solid #000;font-size:.82rem; }
+#ebExamPreview .ebep-coverbox .ebep-cb-label { font-weight:700;width:38%; }
+/* Image in question */
+#ebExamPreview .ebep-q-img { max-width:100%;max-height:200px;display:block;margin:.4rem 0; }
 
 /* Saved exam items */
 .eb-exam-item {
@@ -2429,4 +2468,35 @@ button.tb-logout-btn:hover { background: #ef4444 !important; color: #fff !import
 /* School platform results header card */
 #schoolPlatResultsContainer > div:first-child {
   box-shadow: 0 4px 20px rgba(124,58,237,.15);
+}
+
+/* ── Exam Builder input visibility fixes ── */
+.eb-sp-text, .eb-sp-marks {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+}
+.eb-section-field input,
+.eb-section-field select,
+.eb-qmeta input,
+.eb-qmeta select {
+  background: var(--surface);
+  color: var(--text);
+}
+/* Sub-parts modal inputs */
+#ebSubPartsList input[type="text"],
+#ebSubPartsList input[type="number"] {
+  background: var(--surface);
+  color: var(--text);
+}
+/* Math modal input */
+#ebMathInput {
+  background: var(--surface);
+  color: var(--text);
+}
+/* ── Print styles for exam preview ── */
+@media print {
+  #ebExamPreview { padding: 0; border: none; }
+  #ebExamPreview .ebep-mcq-grid { grid-template-columns: 1fr 1fr; }
+  #ebExamPreview .ebep-sa-matrix { grid-template-columns: 1fr 1fr; }
+  .ebep-footer { position: fixed; bottom: 0; width: 100%; }
 }
