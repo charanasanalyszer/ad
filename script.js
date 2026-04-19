@@ -11883,81 +11883,166 @@ function ebRenderPreview() {
   const totalMarks = EB.sections.reduce((s,sec) => s+(sec.totalMarks||0), 0);
   const el = document.getElementById('ebExamPreview');
   if (!el) return;
-  const letters = ['a','b','c','d','e','f'];
+  const subLetters = ['a','b','c','d','e','f'];
   const subjectFooter = h.subject ? h.subject.toUpperCase() : '';
   const schoolName = (h.schoolName || 'SCHOOL NAME').toUpperCase();
   const dateFormatted = h.date ? new Date(h.date).toLocaleDateString('en-KE',{day:'2-digit',month:'long',year:'numeric'}) : '_______________';
 
-  // Build MCQ questions in 2-col grid, short-answer in 2x2 matrix
+  // ── Small examiner box (used on structured/essay questions only) ──
+  const examBox = (marks) => `
+    <div style="border:1px solid #999;padding:.15rem .35rem;text-align:center;min-width:52px;font-size:.6rem;flex-shrink:0;margin-left:.4rem">
+      <div style="font-size:.52rem;color:#666;border-bottom:1px solid #bbb;padding-bottom:.1rem;margin-bottom:.1rem">Examr.</div>
+      <div style="border-bottom:1px dotted #999;min-height:13px;width:100%">&nbsp;</div>
+      <div style="font-size:.58rem;color:#666">/${marks}</div>
+    </div>`;
+
+  // ── Per-section renderer ──
   const renderSection = (sec, sIdx) => {
     const isMcq = sec.type === 'mcq';
-    const isStructured = sec.type === 'structured';
     const isEssay = sec.type === 'essay';
-
-    // Detect short-answer: structured section where questions have ≤4 marks each (quick answers)
+    const isStructured = sec.type === 'structured';
     const isShortAnswer = isStructured && sec.questions.length >= 2 && sec.questions.every(q => (q.marks||0) <= 4 && !q.subParts?.length);
 
     let questionsHtml = '';
+
     if (isMcq) {
-      // Two-column layout for MCQ
+      // ── Two-column MCQ — NO examiner boxes ──
       questionsHtml = `<div class="ebep-mcq-grid">` +
         sec.questions.map((q, qIdx) => `
-          <div class="ebep-q" style="break-inside:avoid">
-            <div style="display:flex;align-items:flex-start;gap:.3rem">
-              <div class="ebep-examiner-box" style="min-width:60px;font-size:.68rem;flex-shrink:0">
-                <div>Marks</div>
-                <div class="ebep-score-line"></div>
-                <div style="font-size:.6rem;color:#666">/${q.marks}</div>
-              </div>
-              <div style="flex:1">
-                <strong>${qIdx+1}. ${ebEscape(q.question||'[Question text]')}</strong> <em style="font-size:.7rem;color:#666">(${q.marks}mk)</em>
-                ${q.imageData ? `<img src="${q.imageData}" class="ebep-q-img" style="max-height:${q.imageHeight||120}px"/>` : ''}
-                ${q.options?.filter(Boolean).length ? `<div style="margin-top:.3rem">${q.options.map((o,oi) => o?`<div class="ebep-opt">${['A','B','C','D'][oi]}) ${ebEscape(o)}</div>`:'').join('')}</div>` : ''}
-              </div>
-            </div>
+          <div class="ebep-q" style="break-inside:avoid;padding:.25rem 0">
+            <strong>${qIdx+1}. ${ebEscape(q.question||'[Question text]')}</strong>
+            <em style="font-size:.68rem;color:#666"> (${q.marks}mk)</em>
+            ${q.imageData ? `<img src="${q.imageData}" class="ebep-q-img" style="max-height:${q.imageHeight||120}px"/>` : ''}
+            ${q.options?.filter(Boolean).length
+              ? `<div style="margin-top:.25rem">${q.options.map((o,oi) => o ? `<div class="ebep-opt">${['A','B','C','D'][oi]}) ${ebEscape(o)}</div>` : '').join('')}</div>`
+              : ''}
           </div>`).join('') +
         `</div>`;
+
     } else if (isShortAnswer) {
-      // 2×2 matrix for short-answer structured
+      // ── 2×2 matrix for short structured ──
       const pairs = [];
-      for (let i=0; i<sec.questions.length; i+=2) pairs.push([sec.questions[i], sec.questions[i+1]]);
+      for (let i = 0; i < sec.questions.length; i += 2) pairs.push([sec.questions[i], sec.questions[i+1]]);
       questionsHtml = pairs.map((pair, pi) => `
         <div class="ebep-sa-matrix">
           ${pair.map((q, qi) => q ? `
             <div class="ebep-sa-cell">
-              <div class="ebep-sa-qnum">${pi*2+qi+1}. ${ebEscape(q.question||'[Question]')} <em style="font-size:.7rem;color:#555">(${q.marks}mk)</em></div>
+              <div class="ebep-sa-qnum">${pi*2+qi+1}. ${ebEscape(q.question||'[Question]')} <em style="font-size:.68rem;color:#555">(${q.marks}mk)</em></div>
               ${q.imageData ? `<img src="${q.imageData}" class="ebep-q-img" style="max-height:${q.imageHeight||80}px"/>` : ''}
             </div>` : '<div class="ebep-sa-cell"></div>').join('')}
         </div>`).join('');
+
     } else {
-      // Structured / Essay — question then response lines
+      // ── Structured / Essay — question → sub-parts (1a, 1b…) → response lines ──
       questionsHtml = sec.questions.map((q, qIdx) => {
-        const lineCount = isEssay ? 14 : (q.marks <= 3 ? 3 : q.marks <= 6 ? 5 : q.marks <= 10 ? 8 : 12);
+        // Count lines: if sub-parts exist, each sub-part gets its own lines
+        const hasSubParts = q.subParts && q.subParts.length > 0;
+
+        const subPartsHtml = hasSubParts
+          ? q.subParts.map((p, pi) => {
+              const spLines = p.marks <= 2 ? 2 : p.marks <= 4 ? 3 : p.marks <= 6 ? 5 : 7;
+              return `
+                <div style="margin-top:.4rem;break-inside:avoid">
+                  <div style="display:flex;align-items:flex-start">
+                    <span style="font-weight:700;min-width:1.8rem;font-size:.85rem">${qIdx+1}${subLetters[pi]}.</span>
+                    <span style="flex:1;font-size:.85rem">${ebEscape(p.text)}</span>
+                    ${examBox(p.marks)}
+                  </div>
+                  <div class="ebep-response" style="margin-left:1.8rem">${Array.from({length:spLines}).map(()=>'<div class="ebep-line"></div>').join('')}</div>
+                </div>`;
+            }).join('')
+          : (() => {
+              const lineCount = isEssay ? 14 : (q.marks <= 3 ? 3 : q.marks <= 6 ? 5 : q.marks <= 10 ? 8 : 12);
+              return `<div class="ebep-response">${Array.from({length:lineCount}).map(()=>'<div class="ebep-line"></div>').join('')}</div>`;
+            })();
+
         return `
-          <div class="ebep-q" style="break-inside:avoid">
-            <div style="display:flex;align-items:flex-start;gap:.5rem;margin-bottom:.25rem">
-              <strong style="flex:1">${qIdx+1}. ${ebEscape(q.question||'[Question text]')} <em style="font-size:.72rem;font-weight:400;color:#555">(${q.marks} mark${q.marks!==1?'s':''})</em></strong>
-              <div class="ebep-examiner-box" style="min-width:70px;font-size:.68rem">
-                <div style="font-size:.6rem;color:#555">Examiner Use Only</div>
-                <div class="ebep-score-line"></div>
-                <div>/${q.marks}</div>
-              </div>
+          <div class="ebep-q" style="break-inside:avoid;margin-bottom:.75rem">
+            <div style="display:flex;align-items:flex-start">
+              <strong style="flex:1;font-size:.88rem">${qIdx+1}. ${ebEscape(q.question||'[Question text]')}
+                ${!hasSubParts ? `<em style="font-weight:400;font-size:.72rem;color:#555"> (${q.marks} mark${q.marks!==1?'s':''})</em>` : ''}
+              </strong>
+              ${!hasSubParts ? examBox(q.marks) : ''}
             </div>
-            ${q.imageData ? `<img src="${q.imageData}" class="ebep-q-img" style="max-height:${q.imageHeight||150}px"/>` : ''}
-            ${q.subParts?.length ? `<div class="ebep-opts">${q.subParts.map((p,pi) => `
-              <div class="ebep-opt" style="margin-bottom:.2rem">(${letters[pi]}) ${ebEscape(p.text)} <em>(${p.marks} mk)</em></div>`).join('')}</div>` : ''}
-            <div class="ebep-response">${Array.from({length:lineCount}).map(()=>'<div class="ebep-line"></div>').join('')}</div>
+            ${q.imageData ? `<img src="${q.imageData}" class="ebep-q-img" style="max-height:${q.imageHeight||150}px;margin-top:.3rem"/>` : ''}
+            ${subPartsHtml}
           </div>`;
       }).join('');
     }
 
-    const totalSectionMarks = sec.questions.reduce((s,q)=>s+(q.marks||0),0) || sec.totalMarks;
+    const totalSectionMarks = sec.questions.reduce((s,q) => s + (q.marks||0), 0) || sec.totalMarks;
     return `
       <div style="break-before:${sIdx===0?'avoid':'page'}">
         <div class="ebep-sectitle">SECTION ${ebEscape(sec.name)}: ${ebTypeLabel(sec.type).toUpperCase()} (${totalSectionMarks} MARKS)</div>
         ${sec.instruction ? `<div style="font-style:italic;font-size:.82rem;margin-bottom:.5rem;text-align:center">${ebEscape(sec.instruction)}</div>` : ''}
         ${questionsHtml}
         ${!sec.questions.length ? `<div style="color:#aaa;font-size:.78rem;text-align:center">[No questions added yet]</div>` : ''}
+      </div>`;
+  };
+
+  // ── Cover page scoring table ──
+  // Columns: Section | Q1 | Q2 | Q3 … | Section Total | (last col = grand total + grade)
+  const buildScoringTable = () => {
+    const maxQs = Math.max(...EB.sections.map(s => s.questions.length), 0);
+    const secRows = EB.sections.map(sec => {
+      const qCells = sec.questions.map((q, qi) => {
+        // For sub-parts show marks per sub-part
+        if (q.subParts && q.subParts.length) {
+          const subLabels = q.subParts.map((p,pi) => `${qi+1}${subLetters[pi]}`).join('/');
+          const subMarks = q.subParts.map(p => p.marks).join('/');
+          return `<td style="border:1px solid #000;padding:.2rem .3rem;text-align:center;font-size:.65rem">
+            <div style="color:#555;font-size:.58rem">${subLabels}</div>
+            <div style="border-bottom:1px dotted #999;min-height:11px"></div>
+            <div style="font-size:.58rem;color:#777">/${subMarks}</div>
+          </td>`;
+        }
+        return `<td style="border:1px solid #000;padding:.2rem .3rem;text-align:center;font-size:.65rem">
+          <div style="color:#555;font-size:.58rem">Q${qi+1}</div>
+          <div style="border-bottom:1px dotted #999;min-height:11px"></div>
+          <div style="font-size:.58rem;color:#777">/${q.marks}</div>
+        </td>`;
+      });
+      // Pad empty cells
+      while (qCells.length < maxQs) qCells.push(`<td style="border:1px solid #000;background:#f9f9f9"></td>`);
+      const secTotal = sec.questions.reduce((s,q)=>s+(q.marks||0),0)||sec.totalMarks;
+      return `<tr>
+        <td style="border:1px solid #000;padding:.25rem .4rem;font-weight:700;font-size:.72rem;white-space:nowrap">Section ${ebEscape(sec.name)}</td>
+        ${qCells.join('')}
+        <td style="border:1px solid #000;padding:.25rem .3rem;text-align:center;font-weight:700;font-size:.72rem">
+          <div style="border-bottom:1px dotted #999;min-height:12px"></div>
+          <div style="font-size:.6rem;color:#555">/${secTotal}</div>
+        </td>
+      </tr>`;
+    });
+
+    const qHeaders = Array.from({length:maxQs}, (_,i) => `<th style="border:1px solid #000;padding:.2rem .3rem;background:#f0f0f0;font-size:.65rem;text-align:center">Q${i+1}</th>`).join('');
+
+    return `
+      <div style="margin-top:.75rem">
+        <div style="font-weight:900;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;margin-bottom:.3rem;text-align:center">FOR EXAMINER'S USE ONLY</div>
+        <table style="width:100%;border-collapse:collapse;font-size:.72rem">
+          <thead>
+            <tr>
+              <th style="border:1px solid #000;padding:.25rem .4rem;background:#f0f0f0;font-size:.65rem;text-align:left">Section</th>
+              ${qHeaders}
+              <th style="border:1px solid #000;padding:.25rem .3rem;background:#f0f0f0;font-size:.65rem;text-align:center">Sec. Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${secRows.join('')}
+            <tr>
+              <td colspan="${maxQs+1}" style="border:1px solid #000;padding:.25rem .4rem;font-weight:900;font-size:.75rem;text-align:right">GRAND TOTAL</td>
+              <td style="border:2px solid #000;padding:.25rem .3rem;text-align:center;font-weight:900;font-size:.78rem">
+                <div style="border-bottom:1px solid #000;min-height:14px"></div>
+                <div style="font-size:.62rem;color:#555">/${totalMarks}</div>
+              </td>
+            </tr>
+            <tr>
+              <td colspan="${maxQs+1}" style="border:1px solid #000;padding:.25rem .4rem;font-weight:900;font-size:.75rem;text-align:right">GRADE</td>
+              <td style="border:2px solid #000;padding:.3rem;text-align:center;font-size:1rem;font-weight:900;min-height:20px">&nbsp;</td>
+            </tr>
+          </tbody>
+        </table>
       </div>`;
   };
 
@@ -11978,14 +12063,10 @@ function ebRenderPreview() {
         <tr><td class="ebep-cb-label">Signature:</td><td>&nbsp;</td></tr>
       </table>
     </div>
-    <!-- Total marks summary box (examiner) -->
-    <div style="float:right;border:2px solid #000;padding:.4rem .75rem;min-width:140px;text-align:center;font-size:.75rem;font-weight:700;margin-bottom:.75rem">
-      <div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.25rem">For Examiner's Use Only</div>
-      ${EB.sections.map(sec => `<div style="display:flex;justify-content:space-between;border-bottom:1px solid #ccc;padding:.2rem 0"><span>Section ${ebEscape(sec.name)}</span><span style="min-width:40px;border-bottom:1px solid #000">&nbsp;</span><span>/${sec.totalMarks}</span></div>`).join('')}
-      <div style="display:flex;justify-content:space-between;padding:.3rem 0;font-size:.82rem;font-weight:900"><span>TOTAL</span><span style="min-width:40px;border-bottom:2px solid #000">&nbsp;</span><span>/${totalMarks}</span></div>
-    </div>
+    <!-- Scoring table (examiner use) -->
+    ${buildScoringTable()}
     <div style="clear:both"></div>
-    ${instructions.length ? `<div style="margin-bottom:.75rem"><div style="font-weight:900;font-size:.85rem;text-decoration:underline;margin-bottom:.35rem">INSTRUCTIONS TO CANDIDATES:</div>${instructions.map((t,i) => `<div style="font-size:.82rem;margin-bottom:2px">${i+1}. ${ebEscape(t)}</div>`).join('')}</div>` : ''}
+    ${instructions.length ? `<div style="margin-top:.75rem;margin-bottom:.5rem"><div style="font-weight:900;font-size:.85rem;text-decoration:underline;margin-bottom:.35rem">INSTRUCTIONS TO CANDIDATES:</div>${instructions.map((t,i) => `<div style="font-size:.82rem;margin-bottom:2px">${i+1}. ${ebEscape(t)}</div>`).join('')}</div>` : ''}
     <hr style="border:1.5px solid #000;margin:.75rem 0"/>
 
     <!-- PAGE 2 onwards: Sections -->
@@ -12136,14 +12217,15 @@ function ebClientSidePDF(exam) {
   const doc = new jsPDF({ unit:'mm', format:'a4' });
   const { header, sections, instructions, totalMarks } = exam;
   let y = 15; const lm = 15, pw = 180, maxY = 278;
-  const addPage = (need=10) => { if (y+need > maxY) { doc.addPage(); y=15; addFooter(); } };
+  const subLetters = ['a','b','c','d','e','f'];
   const schoolName = (header.schoolName||'SCHOOL').toUpperCase();
   const subjectFooter = (header.subject||'').toUpperCase();
   const dateStr = header.date ? new Date(header.date).toLocaleDateString('en-KE',{day:'2-digit',month:'long',year:'numeric'}) : '_______________';
 
+  const addPage = (need=10) => { if (y+need > maxY) { doc.addPage(); y=15; addFooter(); } };
   const addFooter = () => {
     doc.setFont('Helvetica','italic'); doc.setFontSize(7.5); doc.setTextColor(100);
-    doc.text(`${subjectFooter}  •  ${schoolName}  •  ${dateStr}`, 105, 291, {align:'center'});
+    doc.text(`${subjectFooter}  \u2022  ${schoolName}  \u2022  ${dateStr}`, 105, 291, {align:'center'});
     doc.setLineWidth(.2); doc.setDrawColor(180); doc.line(lm, 288, lm+pw, 288);
     doc.setTextColor(0); doc.setDrawColor(0);
   };
@@ -12164,116 +12246,177 @@ function ebClientSidePDF(exam) {
   const rowH=6.5; const col1=55;
   [['Candidate\'s Name:',''],['Admission No.:',''],['Class / Stream:',''],['Signature:','']].forEach((row,i) => {
     const ry = y+i*rowH+1.5;
-    doc.setFont('Helvetica','bold'); doc.setFontSize(9); doc.text(row[0],lm+2,ry+4);
+    doc.setFont('Helvetica','bold'); doc.setFontSize(9); doc.text(row[0], lm+2, ry+4);
     doc.setLineWidth(.2); doc.line(lm+col1, ry+4.5, lm+pw-2, ry+4.5);
     if (i<3) { doc.setLineWidth(.2); doc.line(lm, y+(i+1)*rowH, lm+pw, y+(i+1)*rowH); }
   });
-  y+=28;
+  y+=30;
 
-  // Examiner-use summary box (right-aligned)
-  const exBox = { x:lm+pw-55, w:55 };
-  doc.setLineWidth(.6); doc.rect(exBox.x, y, exBox.w, 8+sections.length*6+8);
-  doc.setFont('Helvetica','bold'); doc.setFontSize(7.5);
-  doc.text("FOR EXAMINER'S USE ONLY", exBox.x+exBox.w/2, y+4, {align:'center'});
-  doc.setLineWidth(.2); doc.line(exBox.x, y+5.5, exBox.x+exBox.w, y+5.5);
-  let eby = y+5.5;
+  // ── Scoring table on cover ──
+  const maxQs = Math.max(...sections.map(s => s.questions.length), 0);
+  const colW = Math.min(12, Math.floor((pw - 22 - 16) / Math.max(maxQs, 1)));
+  const secColW = 22; const totalColW = 16;
+
+  // Header row
+  doc.setFont('Helvetica','bold'); doc.setFontSize(8);
+  doc.text("FOR EXAMINER'S USE ONLY", 105, y, {align:'center'}); y+=4;
+  doc.setFontSize(6.5); doc.setLineWidth(.3);
+  let tx = lm;
+  doc.rect(tx, y, secColW, 7); doc.text('Section', tx+2, y+4.5); tx+=secColW;
+  for (let i=0; i<maxQs; i++) {
+    doc.rect(tx, y, colW, 7); doc.text(`Q${i+1}`, tx+colW/2, y+4.5, {align:'center'}); tx+=colW;
+  }
+  doc.rect(tx, y, totalColW, 7); doc.text('Sec.Total', tx+totalColW/2, y+4.5, {align:'center'}); y+=7;
+
+  // Section rows
   sections.forEach(sec => {
-    eby+=6;
-    doc.setFont('Helvetica','normal'); doc.setFontSize(8);
-    doc.text(`Section ${sec.name}`, exBox.x+2, eby);
-    doc.text(`/${sec.totalMarks}`, exBox.x+exBox.w-2, eby, {align:'right'});
-    doc.line(exBox.x+28, eby+1, exBox.x+exBox.w-10, eby+1);
+    let rx = lm;
+    doc.setFont('Helvetica','bold'); doc.setFontSize(7);
+    doc.rect(rx, y, secColW, 10); doc.text(`Sec. ${sec.name}`, rx+2, y+6); rx+=secColW;
+    doc.setFont('Helvetica','normal'); doc.setFontSize(6);
+    sec.questions.forEach((q, qi) => {
+      doc.rect(rx, y, colW, 10);
+      // Sub-part label
+      const lbl = q.subParts?.length ? q.subParts.map((_,pi)=>`${qi+1}${subLetters[pi]}`).join('/') : `Q${qi+1}`;
+      const mks = q.subParts?.length ? q.subParts.map(p=>p.marks).join('/') : `/${q.marks}`;
+      doc.text(lbl, rx+colW/2, y+3.5, {align:'center'});
+      doc.setDrawColor(150); doc.line(rx+1, y+6, rx+colW-1, y+6); doc.setDrawColor(0);
+      doc.text(mks, rx+colW/2, y+9, {align:'center'});
+      rx+=colW;
+    });
+    // Pad empty cells
+    for (let i=sec.questions.length; i<maxQs; i++) { doc.rect(rx, y, colW, 10); rx+=colW; }
+    // Section total
+    const secTotal = sec.questions.reduce((s,q)=>s+(q.marks||0),0)||sec.totalMarks;
+    doc.rect(rx, y, totalColW, 10);
+    doc.setDrawColor(150); doc.line(rx+1, y+6, rx+totalColW-1, y+6); doc.setDrawColor(0);
+    doc.setFont('Helvetica','normal'); doc.setFontSize(6);
+    doc.text(`/${secTotal}`, rx+totalColW/2, y+9, {align:'center'});
+    y+=10;
   });
-  eby+=7;
-  doc.setFont('Helvetica','bold'); doc.setFontSize(9);
-  doc.text('TOTAL', exBox.x+2, eby); doc.text(`/${totalMarks}`, exBox.x+exBox.w-2, eby, {align:'right'});
-  doc.setLineWidth(.4); doc.line(exBox.x+28, eby+1, exBox.x+exBox.w-10, eby+1);
 
-  // Instructions
-  if (instructions?.length) {
-    doc.setFont('Helvetica','bold'); doc.setFontSize(10); doc.text('INSTRUCTIONS TO CANDIDATES:', lm, y+5); let iy=y+10;
-    doc.setFont('Helvetica','normal'); doc.setFontSize(9);
-    instructions.forEach((t,i) => { const ls=doc.splitTextToSize(`${i+1}. ${t}`,pw-60); doc.text(ls,lm,iy); iy+=ls.length*4.5; });
-    y = Math.max(eby+6, iy+3);
-  } else { y = eby+6; }
+  // Grand total + grade rows
+  doc.setFont('Helvetica','bold'); doc.setFontSize(7);
+  const totRowX = lm+secColW+maxQs*colW;
+  doc.rect(lm, y, secColW+maxQs*colW, 8); doc.text('GRAND TOTAL', lm+2, y+5.5);
+  doc.rect(totRowX, y, totalColW, 8);
+  doc.setDrawColor(0); doc.setLineWidth(.4); doc.line(totRowX+1, y+5, totRowX+totalColW-1, y+5);
+  doc.setFontSize(6); doc.text(`/${totalMarks}`, totRowX+totalColW/2, y+7.5, {align:'center'});
+  y+=8;
+  doc.rect(lm, y, secColW+maxQs*colW, 8); doc.text('GRADE', lm+2, y+5.5);
+  doc.rect(totRowX, y, totalColW, 8);
+  y+=12;
 
   addFooter();
+
+  // Instructions on cover
+  if (instructions?.length) {
+    doc.setFont('Helvetica','bold'); doc.setFontSize(10); doc.text('INSTRUCTIONS TO CANDIDATES:', lm, y); y+=5;
+    doc.setFont('Helvetica','normal'); doc.setFontSize(9);
+    instructions.forEach((t,i) => { addPage(5); const ls=doc.splitTextToSize(`${i+1}. ${t}`, pw-60); doc.text(ls, lm, y); y+=ls.length*4.5; });
+    y+=2;
+  }
   doc.setLineWidth(.8); doc.line(lm, y, lm+pw, y); y+=8;
 
-  // ── PAGE 2+: SECTIONS ──
+  // ── SECTIONS (page 2 onwards) ──
   sections.forEach((sec, sIdx) => {
-    if (sIdx === 0) { doc.addPage(); y=15; addFooter(); }
-    addPage(14);
+    doc.addPage(); y=15; addFooter();
     doc.setFont('Helvetica','bold'); doc.setFontSize(11);
-    const secTitle = `SECTION ${sec.name}: ${ebTypeLabel(sec.type).toUpperCase()} (${sec.totalMarks} MARKS)`;
+    const secTitle = `SECTION ${sec.name}: ${ebTypeLabel(sec.type).toUpperCase()} (${sec.questions.reduce((s,q)=>s+(q.marks||0),0)||sec.totalMarks} MARKS)`;
     doc.text(secTitle, 105, y, {align:'center'}); y+=6;
-    if (sec.instruction) { doc.setFont('Helvetica','italic'); doc.setFontSize(9); const ls=doc.splitTextToSize(sec.instruction,pw); doc.text(ls,105,y,{align:'center'}); y+=ls.length*4.5; }
+    if (sec.instruction) {
+      doc.setFont('Helvetica','italic'); doc.setFontSize(9);
+      const ils = doc.splitTextToSize(sec.instruction, pw); doc.text(ils, 105, y, {align:'center'}); y+=ils.length*4.5;
+    }
     y+=2;
 
     const isMcq = sec.type === 'mcq';
     const isShortAnswer = sec.type === 'structured' && sec.questions.length >= 2 && sec.questions.every(q=>(q.marks||0)<=4 && !q.subParts?.length);
 
     if (isMcq) {
-      // Two-column MCQ layout
+      // ── Two-column MCQ — NO examiner boxes ──
       const half = Math.ceil(sec.questions.length/2);
-      const leftQs = sec.questions.slice(0, half);
-      const rightQs = sec.questions.slice(half);
-      const colW = (pw-5)/2; const col2X = lm+colW+5;
-      const renderCol = (qs, startIdx, x) => {
+      const colW2 = (pw-6)/2; const col2X = lm+colW2+6;
+      const renderMcqCol = (qs, startIdx, x) => {
         let cy = y;
-        qs.forEach((q,qi) => {
+        qs.forEach((q, qi) => {
           const qNum = startIdx+qi+1;
-          const qLines = doc.splitTextToSize(`${qNum}. ${q.question||'[Question]'}  (${q.marks}mk)`, colW-5);
-          addPage(20); if (cy+20 > maxY) { doc.addPage(); cy=15; addFooter(); }
+          const qLines = doc.splitTextToSize(`${qNum}. ${q.question||'[Question]'}  (${q.marks}mk)`, colW2-4);
+          if (cy+14 > maxY) { doc.addPage(); cy=15; addFooter(); }
           doc.setFont('Helvetica','bold'); doc.setFontSize(9.5); doc.text(qLines, x, cy); cy+=qLines.length*5;
-          // examiner mini-box
-          doc.setLineWidth(.3); doc.rect(x+colW-12, cy-qLines.length*5-1, 11, qLines.length*5);
-          doc.setFont('Helvetica','normal'); doc.setFontSize(7); doc.text(`/${q.marks}`, x+colW-6.5, cy-3, {align:'center'});
           const labs=['A)','B)','C)','D)']; doc.setFont('Helvetica','normal'); doc.setFontSize(9);
           (q.options||[]).forEach((o,oi) => { if(o){ doc.text(`  ${labs[oi]} ${o}`, x, cy); cy+=4.5; } });
           cy+=4;
         });
         return cy;
       };
-      const lyEnd = renderCol(leftQs, 0, lm);
-      const ryEnd = renderCol(rightQs, half, col2X);
+      const lyEnd = renderMcqCol(sec.questions.slice(0,half), 0, lm);
+      const ryEnd = renderMcqCol(sec.questions.slice(half), half, col2X);
       y = Math.max(lyEnd, ryEnd)+4;
+
     } else if (isShortAnswer) {
-      // 2x2 matrix for short-answer
+      // 2×2 matrix
       for (let i=0; i<sec.questions.length; i+=2) {
-        addPage(30);
-        const boxH = 30; const colW = (pw-4)/2;
-        doc.setLineWidth(.4);
+        addPage(32);
+        const boxH=30; const colW2=(pw-4)/2;
         [0,1].forEach(ci => {
           const q = sec.questions[i+ci]; if(!q) return;
-          const bx = lm + ci*(colW+4);
-          doc.rect(bx, y, colW, boxH);
+          const bx = lm+ci*(colW2+4);
+          doc.setLineWidth(.4); doc.rect(bx, y, colW2, boxH);
           doc.setFont('Helvetica','bold'); doc.setFontSize(9);
-          const qls = doc.splitTextToSize(`${i+ci+1}. ${q.question||'[Question]'}  (${q.marks}mk)`, colW-4);
+          const qls = doc.splitTextToSize(`${i+ci+1}. ${q.question||'[Question]'}  (${q.marks}mk)`, colW2-4);
           doc.text(qls, bx+2, y+5);
         });
         y+=boxH+3;
       }
+
     } else {
-      // Structured/Essay — question then lines then marks box
+      // ── Structured / Essay with 1a, 1b sub-parts + small examiner box ──
       sec.questions.forEach((q, qIdx) => {
-        const lineCount = sec.type==='essay' ? 14 : (q.marks<=3?3:q.marks<=6?5:q.marks<=10?8:12);
-        const needH = 12+lineCount*5.5;
-        addPage(needH);
+        const hasSubParts = q.subParts && q.subParts.length > 0;
+        const needH = hasSubParts ? 10 + q.subParts.reduce((s,p)=>{const l=p.marks<=2?2:p.marks<=4?3:p.marks<=6?5:7;return s+l*5.5+8;},0) : 12+(q.marks<=3?3:q.marks<=6?5:q.marks<=10?8:12)*5.5;
+        addPage(Math.min(needH, 40));
+
+        // Question stem
         doc.setFont('Helvetica','bold'); doc.setFontSize(10);
-        const qText = `${qIdx+1}. ${q.question||'[Question]'}`;
-        const qls = doc.splitTextToSize(qText, pw-60); doc.text(qls, lm, y); 
-        // marks box right
-        doc.setLineWidth(.4); doc.rect(lm+pw-32, y-5, 30, 10);
-        doc.setFont('Helvetica','bold'); doc.setFontSize(7); doc.text("Examiner Use Only", lm+pw-17, y-3, {align:'center'});
-        doc.setLineWidth(.2); doc.line(lm+pw-32, y+1, lm+pw-2, y+1);
-        doc.setFontSize(8); doc.text(`/${q.marks}`, lm+pw-17, y+4, {align:'center'});
+        const qText = hasSubParts ? `${qIdx+1}. ${q.question||'[Question]'}` : `${qIdx+1}. ${q.question||'[Question]'}  (${q.marks} marks)`;
+        const qls = doc.splitTextToSize(qText, pw-36); doc.text(qls, lm, y);
+
+        if (!hasSubParts) {
+          // Small examiner box right-side
+          doc.setLineWidth(.3); doc.rect(lm+pw-32, y-5, 30, 10);
+          doc.setFont('Helvetica','normal'); doc.setFontSize(6); doc.text("Examr. Use Only", lm+pw-17, y-3, {align:'center'});
+          doc.setLineWidth(.2); doc.line(lm+pw-32, y+1, lm+pw-2, y+1);
+          doc.setFontSize(7.5); doc.text(`/${q.marks}`, lm+pw-17, y+4, {align:'center'});
+        }
         y+=qls.length*5;
-        doc.setFont('Helvetica','normal'); doc.setFontSize(9);
-        if (q.subParts?.length) { const ls=['a','b','c','d']; q.subParts.forEach((p,pi) => { addPage(5); doc.text(`   (${ls[pi]}) ${p.text}  (${p.marks} marks)`,lm,y); y+=4.5; }); }
-        doc.setDrawColor(180); doc.setLineWidth(.2);
-        for (let l=0;l<lineCount;l++){addPage(6);y+=5.5;doc.line(lm,y,lm+pw,y);}
-        doc.setDrawColor(0); y+=6;
+
+        if (hasSubParts) {
+          // Each sub-part: "1a. text (marks)" then lines
+          q.subParts.forEach((p, pi) => {
+            addPage(20);
+            doc.setFont('Helvetica','bold'); doc.setFontSize(9.5);
+            const spLabel = `${qIdx+1}${subLetters[pi]}. `;
+            const spText = doc.splitTextToSize(`${spLabel}${p.text}`, pw-36);
+            doc.text(spText, lm, y);
+            // Small examiner box
+            doc.setLineWidth(.3); doc.rect(lm+pw-32, y-4, 30, 9);
+            doc.setFont('Helvetica','normal'); doc.setFontSize(6); doc.text("Examr.", lm+pw-17, y-2, {align:'center'});
+            doc.setLineWidth(.2); doc.line(lm+pw-32, y+1, lm+pw-2, y+1);
+            doc.setFontSize(7.5); doc.text(`/${p.marks}`, lm+pw-17, y+3.5, {align:'center'});
+            y+=spText.length*4.5;
+            const spLines = p.marks<=2?2:p.marks<=4?3:p.marks<=6?5:7;
+            doc.setDrawColor(180); doc.setLineWidth(.2);
+            for (let l=0;l<spLines;l++){addPage(6);y+=5.5;doc.line(lm+8,y,lm+pw,y);}
+            doc.setDrawColor(0); y+=4;
+          });
+        } else {
+          // Plain response lines
+          const lineCount = sec.type==='essay'?14:(q.marks<=3?3:q.marks<=6?5:q.marks<=10?8:12);
+          doc.setDrawColor(180); doc.setLineWidth(.2);
+          for (let l=0;l<lineCount;l++){addPage(6);y+=5.5;doc.line(lm,y,lm+pw,y);}
+          doc.setDrawColor(0); y+=6;
+        }
       });
     }
     y+=5;
