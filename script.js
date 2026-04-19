@@ -112,6 +112,32 @@ function getGrade(marks, maxMarks=100) {
 function getMeanGrade(mean) {
   return getMeanGradeFromSystem(mean);
 }
+
+// ─── Points-based overall grade (total points out of 72 max, 9 subjects × 8pts) ─
+// Scale: 0-7=BE2, 8-17=BE1 (placeholder for actual 9-17), etc.
+// User spec: 7 and below=BE2, 9-17=BE1, 18-26=AE2, 27-35=AE1, 36-44=ME2, 45-53=ME1, 54-62=EE2, 63-72=EE1
+// (8 falls in BE1 band per rounding — treated as 9-17)
+const POINTS_GRADE_BANDS = [
+  { min:63, max:72, grade:'EE1', label:'Outstanding',     cls:'b-green'  },
+  { min:54, max:62, grade:'EE2', label:'Excellent',       cls:'b-teal'   },
+  { min:45, max:53, grade:'ME1', label:'Very Good',       cls:'b-blue'   },
+  { min:36, max:44, grade:'ME2', label:'Good',            cls:'b-lblue'  },
+  { min:27, max:35, grade:'AE1', label:'Average',         cls:'b-amber'  },
+  { min:18, max:26, grade:'AE2', label:'Fair',            cls:'b-orange' },
+  { min:8,  max:17, grade:'BE1', label:'Needs Attention', cls:'b-red'    },
+  { min:0,  max:7,  grade:'BE2', label:'Below Average',   cls:'b-dkred'  },
+];
+function getPointsGrade(totalPoints) {
+  const pts = Math.round(totalPoints || 0);
+  for (const b of POINTS_GRADE_BANDS) {
+    if (pts >= b.min && pts <= b.max) return b;
+  }
+  return POINTS_GRADE_BANDS[POINTS_GRADE_BANDS.length - 1];
+}
+function getAverageMark(total, numSubjects) {
+  if (!numSubjects) return 0;
+  return parseFloat((total / numSubjects).toFixed(2));
+}
 function gradeTag(g) { return `<span class="badge ${g.cls}">${g.grade}</span>`; }
 
 // ═══════════════ TEACHER INITIALS ═══════════════
@@ -3390,13 +3416,13 @@ function buildMeritTableHTML(scored, examId, showStreamCol) {
   const examSubs   = examSubIds.map(sid => subjects.find(s=>s.id===sid)).filter(Boolean);
 
   const subHeaders = examSubs.map(s=>`<th style="text-align:center;font-size:.72rem" title="${s.name}">${s.code}</th>`).join('');
-  const colCount   = 6 + (showStreamCol?2:0) + examSubs.length + 4;
+  const colCount   = 6 + (showStreamCol?2:0) + examSubs.length + 5;
 
   const headerRow = `<tr>
     <th>Class Rank</th><th>Adm No</th><th>Name</th><th>G</th>
     ${showStreamCol ? '<th>Stream</th><th>Str.Pos</th>' : ''}
     ${subHeaders}
-    <th>Total</th><th>Mean</th><th>Grade</th><th>Points</th>
+    <th>Total</th><th>Avg</th><th>Mean</th><th>Grade</th><th>Points</th><th>Pts Grade</th>
   </tr>`;
 
   const bodyRows = scored.length ? scored.map(s => {
@@ -3427,9 +3453,11 @@ function buildMeritTableHTML(scored, examId, showStreamCol) {
       ${showStreamCol ? `<td>${stream?.name||'—'}</td><td>#${s.streamRank}</td>` : ''}
       ${subCells}
       <td><strong>${s.total}</strong></td>
+      <td style="text-align:center;font-weight:600;color:#1a6fb5">${(s.total/examSubs.length).toFixed(1)}</td>
       <td>${s.mean.toFixed(2)}</td>
       <td>${gradeTag(s.grade)}</td>
       <td>${s.points}</td>
+      <td><span class="badge ${getPointsGrade(s.points).cls}" style="font-size:.72rem">${getPointsGrade(s.points).grade}</span></td>
     </tr>`;
   }).join('') : `<tr><td colspan="${colCount}" style="text-align:center;color:var(--muted);padding:1.5rem">No marks data.</td></tr>`;
 
@@ -3506,9 +3534,12 @@ function exportMeritExcel() {
       }
     });
     row['Total']  = s.total;
+    row['Avg']    = examSubs.length ? parseFloat((s.total/examSubs.length).toFixed(1)) : '';
     row['Mean']   = s.mean.toFixed(2);
     row['Grade']  = s.grade?.grade||'';
     row['Points'] = s.points;
+    row['PtsGrade'] = getPointsGrade(s.points).grade;
+    row['PtsLabel'] = getPointsGrade(s.points).label;
     return row;
   });
   const ws = XLSX.utils.json_to_sheet(rows);
@@ -3593,15 +3624,17 @@ function exportMeritPDF() {
 
     // ── PAGE 1: Overall merit list ──
     addPageHeader('OVERALL MERIT LIST', `${sch.address||''} | Printed: ${new Date().toLocaleDateString()}`);
-    const meritHead = [['#','Adm No','Name','G','Stream','Str.P', ...examSubs.map(s=>s.code), 'Total','Mean','Grade','Pts']];
+    const meritHead = [['#','Adm No','Name','G','Stream','Str.P', ...examSubs.map(s=>s.code), 'Total','Avg','Mean','Grade','Pts','PtsGrade']];
     const meritBody = scored.map(s => {
       const stream = streams.find(x=>x.id===s.streamId);
       const subScores = examSubs.map(sub=>{
         const sc = getStuSubScore(s.id, sub.id);
         return sc !== null ? String(sc) : '—';
       });
+      const avg = examSubs.length ? (s.total/examSubs.length).toFixed(1) : '—';
+      const ptGrade = getPointsGrade(s.points).grade;
       return [s.overallRank, s.adm, s.name, s.gender, stream?.name||'—', '#'+s.streamRank,
-              ...subScores, s.total, s.mean.toFixed(2), s.grade?.grade||'—', s.points];
+              ...subScores, s.total, avg, s.mean.toFixed(2), s.grade?.grade||'—', s.points, ptGrade];
     });
     doc.autoTable({
       startY: 34, head: meritHead, body: meritBody,
@@ -5114,7 +5147,7 @@ function buildReportHTML(data, ctRemarks, principalRemarks, nextOpen, schoolClos
                 : `<td style="text-align:center">${data.subjectRows.reduce((a,r)=>a+r.max,0)}</td><td style="text-align:center">${data.total}</td>`}
               <td style="text-align:center${data.isConsolidated && srcExams.length > 0 ? ';padding:.2rem .3rem;font-size:.75rem' : ''}">${data.mGrade.grade}</td>
               <td style="text-align:center${data.isConsolidated && srcExams.length > 0 ? ';padding:.2rem .3rem;font-size:.75rem' : ''}">${data.totalPoints}</td>
-              <td style="${data.isConsolidated && srcExams.length > 0 ? 'padding:.2rem .3rem;font-size:.72rem' : ''}">${data.mGrade.label}</td>
+              <td style="${data.isConsolidated && srcExams.length > 0 ? 'padding:.2rem .3rem;font-size:.72rem' : ''}">Avg: <strong>${getAverageMark(data.total, data.subjectRows.length).toFixed(1)}</strong> &nbsp;|\&nbsp; ${getPointsGrade(data.totalPoints).grade}</td>
             </tr>
           </tbody>
         </table>
@@ -5127,11 +5160,18 @@ function buildReportHTML(data, ctRemarks, principalRemarks, nextOpen, schoolClos
       <div class="rf-section-body">
         <div class="rf-info-grid">
           <div class="rf-info-item"><span class="rf-info-label">Total Marks</span><span class="rf-info-value" style="color:#1a6fb5;font-size:11pt">${data.total}</span></div>
+          <div class="rf-info-item"><span class="rf-info-label">Average Mark</span><span class="rf-info-value" style="color:#1a6fb5;font-size:11pt">${getAverageMark(data.total, data.subjectRows.length).toFixed(1)}</span></div>
           <div class="rf-info-item"><span class="rf-info-label">Mean Score</span><span class="rf-info-value" style="color:#1a6fb5;font-size:11pt">${data.mean.toFixed(2)}</span></div>
+          <div class="rf-info-item"><span class="rf-info-label">Total Points</span><span class="rf-info-value" style="color:#7c3aed;font-size:11pt;font-weight:700">${data.totalPoints}</span></div>
+          <div class="rf-info-item"><span class="rf-info-label">Points Grade</span><span class="rf-info-value" style="color:${getPointsGrade(data.totalPoints).cls.includes('green')||getPointsGrade(data.totalPoints).cls.includes('teal')?'#16a34a':getPointsGrade(data.totalPoints).cls.includes('red')?'#dc2626':'#1a6fb5'};font-size:11pt;font-weight:700">${getPointsGrade(data.totalPoints).grade} — ${getPointsGrade(data.totalPoints).label}</span></div>
           <div class="rf-info-item"><span class="rf-info-label">Grade</span><span class="rf-info-value" style="color:#16a34a;font-size:11pt">${data.mGrade.grade} — ${data.mGrade.label}</span></div>
           <div class="rf-info-item"><span class="rf-info-label">Stream Position</span><span class="rf-info-value">${data.streamRank > 0 ? data.streamRank + ' / ' + (students.filter(s=>s.streamId===data.stu.streamId).length) : '—'}</span></div>
           <div class="rf-info-item"><span class="rf-info-label">Overall Position</span><span class="rf-info-value">${data.overallRank > 0 ? data.overallRank + ' / ' + students.length : '—'}</span></div>
-          <div class="rf-info-item"><span class="rf-info-label">Total Points</span><span class="rf-info-value">${data.totalPoints}</span></div>
+        </div>
+        <!-- Points Grade Scale reference -->
+        <div style="margin-top:.5rem;padding:.4rem .65rem;background:#f8faff;border:1px solid #dbeafe;border-radius:5px;font-size:.7rem;color:#555">
+          <strong style="color:#1a6fb5">Points Grade Scale (out of 72):</strong>
+          ${POINTS_GRADE_BANDS.slice().reverse().map(b=>`<span style="margin-right:.4rem"><strong>${b.grade}</strong>: ${b.min}–${b.max}</span>`).join('')}
         </div>
       </div>
     </div>
@@ -5206,15 +5246,15 @@ function buildReportHTML(data, ctRemarks, principalRemarks, nextOpen, schoolClos
 
     <!-- QR CODE SECTION (auto-generated, shows on print) -->
     <div class="rf-qr-section" id="rf-qr-${data.stu.id}-${data.exam.id}"
-         style="display:flex;align-items:center;gap:1rem;margin-top:.6rem;padding:.75rem 1rem;
-                background:#f0f7ff;border:1.5px dashed #b3d4f5;border-radius:8px;page-break-inside:avoid">
-      <div id="rf-qr-canvas-${data.stu.id}-${data.exam.id}" style="flex-shrink:0;background:#fff;padding:5px;border-radius:5px;width:80px;height:80px;display:flex;align-items:center;justify-content:center">
-        <span style="font-size:.6rem;color:#94a3b8;text-align:center">Loading QR…</span>
+         style="display:flex;align-items:center;gap:.6rem;margin-top:.4rem;padding:.4rem .75rem;
+                background:#f0f7ff;border:1px dashed #b3d4f5;border-radius:6px;page-break-inside:avoid">
+      <div id="rf-qr-canvas-${data.stu.id}-${data.exam.id}" style="flex-shrink:0;background:#fff;padding:3px;border-radius:4px;width:52px;height:52px;display:flex;align-items:center;justify-content:center">
+        <span style="font-size:.55rem;color:#94a3b8;text-align:center">Loading QR…</span>
       </div>
       <div style="flex:1;min-width:0">
-        <div style="font-size:.7rem;font-weight:700;color:#1a6fb5;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.2rem">📱 Scan to View Results Online</div>
-        <div style="font-size:.68rem;color:#555;line-height:1.5">Student can scan this QR code anytime to access their full results on any device.</div>
-        <div style="font-size:.62rem;color:#94a3b8;margin-top:.2rem;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="rf-qr-url-${data.stu.id}-${data.exam.id}"></div>
+        <div style="font-size:.65rem;font-weight:700;color:#1a6fb5;text-transform:uppercase;letter-spacing:.04em;margin-bottom:.1rem">📱 Scan to View Results Online</div>
+        <div style="font-size:.62rem;color:#555;line-height:1.4">Student can scan to access full results on any device.</div>
+        <div style="font-size:.58rem;color:#94a3b8;margin-top:.15rem;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="rf-qr-url-${data.stu.id}-${data.exam.id}"></div>
       </div>
     </div>
   </div>`;
@@ -5359,7 +5399,7 @@ function generateReport() {
       canvasEl.innerHTML = '';
       try {
         new QRCode(canvasEl, {
-          text: url, width: 70, height: 70,
+          text: url, width: 46, height: 46,
           colorDark: '#0f172a', colorLight: '#ffffff',
           correctLevel: QRCode.CorrectLevel.H
         });
@@ -6204,7 +6244,11 @@ function renderMeritList() {
     const streamScored = buildMeritData(examId, streamId, str?.classId||classId||null);
     const { headerRow, bodyRows } = buildMeritTableHTML(streamScored, examId, false);
     const subAnalysis = buildSubjectAnalysisHTML(examId, streamScored.map(s=>s.id));
-    container.innerHTML = `
+    const ptsLegendStream = `<div style="margin-bottom:.75rem;padding:.4rem .85rem;background:#f0f7ff;border:1px solid #dbeafe;border-radius:7px;font-size:.72rem;display:flex;flex-wrap:wrap;gap:.2rem .5rem;align-items:center">
+      <strong style="color:#1a6fb5;margin-right:.3rem">Points Grade Scale (out of 72):</strong>
+      ${POINTS_GRADE_BANDS.slice().reverse().map(b=>`<span class="badge ${b.cls}" style="font-size:.65rem">${b.grade}: ${b.min}–${b.max}</span>`).join('')}
+    </div>`;
+    container.innerHTML = ptsLegendStream + `
       <h3 style="margin-bottom:.75rem;font-family:var(--font);font-weight:700">
         🌊 ${cls ? cls.name + ' &rsaquo; ' : ''}${str?.name||streamId} &mdash; Stream Merit List
         <span style="font-size:.78rem;font-weight:400;color:var(--muted);margin-left:.5rem">${exam?.name||''}</span>
@@ -6234,6 +6278,12 @@ function renderMeritList() {
     container.innerHTML = '<p style="color:var(--muted);padding:1rem">No scored students found for this exam.</p>';
     return;
   }
+
+  // Points grade scale legend
+  const ptsLegend = `<div style="margin-bottom:1rem;padding:.5rem .85rem;background:#f0f7ff;border:1px solid #dbeafe;border-radius:7px;font-size:.75rem;display:flex;flex-wrap:wrap;gap:.25rem .65rem;align-items:center">
+    <strong style="color:#1a6fb5;margin-right:.3rem">Points Grade Scale (out of 72):</strong>
+    ${POINTS_GRADE_BANDS.slice().reverse().map(b=>`<span class="badge ${b.cls}" style="font-size:.68rem">${b.grade}: ${b.min}–${b.max} <span style="font-weight:400;opacity:.8">${b.label}</span></span>`).join('')}
+  </div>`;
 
   // ── Render one section per class ────────────────────────────────────────
   const classSections = targetClasses.map((cls, ci) => {
@@ -6286,7 +6336,7 @@ function renderMeritList() {
       </div>`;
   }).join('');
 
-  container.innerHTML = classSections || '<p style="color:var(--muted);padding:1rem">No data found.</p>';
+  container.innerHTML = ptsLegend + (classSections || '<p style="color:var(--muted);padding:1rem">No data found.</p>');
 }
 
 // ═══════════════ DOWNLOAD ALL REPORT FORMS AS PDF ═══════════════
