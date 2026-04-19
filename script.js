@@ -2976,7 +2976,42 @@ function buildMeritTableHTML(scored, examId, showStreamCol) {
 
 // renderMeritList — full implementation is at the bottom of this file (overrides this stub)
 
-function printMeritList() { window.print(); }
+function printMeritList() {
+  const wrap = document.getElementById('meritListWrap');
+  if (!wrap || !wrap.innerHTML.trim() || wrap.innerHTML.includes('Select an exam')) {
+    showToast('Generate the merit list first', 'warning');
+    return;
+  }
+  const sch = settings.schoolName || 'School';
+  const win = window.open('', '_blank', 'width=1000,height=800');
+  win.document.write(`<!DOCTYPE html><html><head><title>Merit List — ${sch}</title><style>
+    *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important;box-sizing:border-box}
+    @page{size:A4 landscape;margin:10mm}
+    body{font-family:'Segoe UI',Arial,sans-serif;color:#1e293b;background:#fff;padding:1rem;font-size:9pt}
+    h2{color:#1a6fb5;margin:0 0 .5rem;font-size:13pt}
+    h3{color:#1a6fb5;font-size:11pt;margin:.75rem 0 .4rem}
+    h4{color:#16a34a;font-size:10pt;margin:.6rem 0 .3rem}
+    table{width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:.75rem}
+    thead{background:#f0f7ff!important}
+    th{background:#1a6fb5!important;color:#fff!important;padding:4px 7px;text-align:left;font-weight:700;border:1px solid #a0bdd8;font-size:8pt}
+    td{padding:3px 7px;border:1px solid #d1dfe8;vertical-align:middle}
+    tr:nth-child(even) td{background:#f8fbff!important}
+    tr:first-child td{background:#dbeafe!important;font-weight:700}
+    .tbl-wrap{overflow:visible;border-radius:0;border:none}
+    @media print{button{display:none!important}.no-print{display:none!important}}
+  </style></head><body>
+    <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid #1a6fb5;padding-bottom:.5rem;margin-bottom:1rem">
+      <div>
+        <div style="font-size:14pt;font-weight:800;color:#1a6fb5">${sch}</div>
+        <div style="font-size:9pt;color:#64748b">Merit List &bull; Printed: ${new Date().toLocaleDateString('en-KE',{day:'2-digit',month:'long',year:'numeric'})}</div>
+      </div>
+      <button class="no-print" onclick="window.print()" style="padding:.4rem 1.2rem;background:#1a6fb5;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.85rem">🖨 Print</button>
+    </div>
+    ${wrap.innerHTML}
+  </body></html>`);
+  win.document.close();
+  setTimeout(() => { win.focus(); win.print(); }, 500);
+}
 
 function exportMeritExcel() {
   const examId = document.getElementById('mlExam').value; if (!examId) { showToast('Select an exam','error'); return; }
@@ -5588,240 +5623,73 @@ function renderMeritList() {
 // ═══════════════ DOWNLOAD ALL REPORT FORMS AS PDF ═══════════════
 function downloadAllReportsPDF() {
   const examId   = document.getElementById('rpExam').value;
-  const streamId = document.getElementById('rpStream')?.value || '';
-  const stuId    = document.getElementById('rpStudent')?.value || '';
-  const nextOpen = document.getElementById('rpNextOpen').value;
-  const schoolClosed = document.getElementById('rpSchoolClosed')?.value||'';
-  const feeBalance   = document.getElementById('rpFeeBalance')?.value||'';
-  const feeNextTerm  = document.getElementById('rpFeeNextTerm')?.value||'';
-  const autoComments = document.getElementById('rpAutoComments')?.checked !== false;
-  const ctR  = document.getElementById('rpCTRemarks').value;
-  const prR  = document.getElementById('rpPrincipalRemarks').value;
-
   if (!examId) { showToast('Select an exam first','error'); return; }
 
-  const classId  = document.getElementById('rpClass')?.value || '';
-  let stuList = stuId ? [students.find(s=>s.id===stuId)].filter(Boolean)
-    : streamId ? students.filter(s=>s.streamId===streamId)
-    : classId  ? students.filter(s=>s.classId===classId)
-    : [...students];
-  stuList = stuList.sort((a,b)=>a.name.localeCompare(b.name));
-
-  if (!stuList.length) { showToast('No students to generate reports for','warning'); return; }
-
-  showToast(`Generating PDF for ${stuList.length} student(s)…`,'info');
-
-  try {
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
-    const PW = doc.internal.pageSize.getWidth();
-    const PH = doc.internal.pageSize.getHeight();
-
-    stuList.forEach((stu, idx) => {
-      if (idx > 0) doc.addPage();
-      const d = getStudentReport(stu.id, examId); if (!d) return;
-
-      let ctRemark = ctR;
-      let prRemark = prR;
-      if (autoComments) {
-        ctRemark = generateCTComment(d.mean, d.mGrade.grade, stu.gender, stu.name, d.streamRank, stuList.length);
-        prRemark = generatePrincipalComment(d.mean, d.mGrade.grade, d.overallRank, students.length);
-      }
-
-      const s = settings;
-      // Header bar
-      doc.setFillColor(26,111,181); doc.rect(0,0,PW,14,'F');
-      doc.setFontSize(12); doc.setTextColor(255,255,255); doc.setFont(undefined,'bold');
-      doc.text(s.schoolName||'School Name', 14, 9);
-      doc.setFontSize(8); doc.setFont(undefined,'normal');
-      doc.text(`STUDENT PROGRESS REPORT — ${d.exam.term} ${d.exam.year}`, PW-14, 9, {align:'right'});
-      doc.setTextColor(0,0,0);
-
-      // Student info block
-      doc.setFontSize(9); doc.setFont(undefined,'bold');
-      doc.text('STUDENT INFORMATION', 14, 20);
-      doc.setFont(undefined,'normal'); doc.setFontSize(8.5);
-      const info = [
-        [`Name: ${stu.name}`, `Adm No: ${stu.adm}`],
-        [`Class: ${d.cls?.name||'—'}`, `Stream: ${d.stream?.name||'—'}`],
-        [`Gender: ${stu.gender==='M'?'Male':'Female'}`, `Exam: ${d.exam.name}`],
-      ];
-      info.forEach((row, ri) => {
-        doc.text(row[0], 14, 26 + ri*5);
-        doc.text(row[1], PW/2, 26 + ri*5);
-      });
-
-      // Marks table
-      const gs = getActiveGradingSystem();
-      let tableHead, tableBody, totalRow;
-      if (d.isConsolidated && d.sourceExamObjs && d.sourceExamObjs.length > 0) {
-        const srcNames = d.sourceExamObjs.map(e=>e.name);
-        tableHead = [['#','Subject', ...srcNames, 'Avg','Grade','Pts','Remarks']];
-        tableBody = d.subjectRows.map((r,i)=>[
-          i+1, r.name,
-          ...(r.sourceScores||[]).map(sc=>sc!==null?sc:'—'),
-          r.score!==null?r.score:'—', r.grade, r.points, r.label
-        ]);
-        const srcTotals = d.sourceExamObjs.map((_,si)=>
-          parseFloat(d.subjectRows.reduce((a,r)=>{const sc=(r.sourceScores||[])[si];return a+(sc!==null&&sc!==undefined?sc:0);},0).toFixed(1))
-        );
-        totalRow = ['','AVG TOTAL / MEAN', ...srcTotals, parseFloat(d.total.toFixed(1)), d.mGrade.grade, d.totalPoints, d.mGrade.label];
-      } else {
-        tableHead = [['#','Subject','Out Of','Score','Grade','Points','Remarks']];
-        tableBody = d.subjectRows.map((r,i)=>[i+1, r.name, r.max, r.score!==null?r.score:'—', r.grade, r.points, r.label]);
-        totalRow  = ['','TOTALS / MEAN', d.subjectRows.reduce((a,r)=>a+r.max,0), d.total, d.mGrade.grade, d.totalPoints, d.mGrade.label];
-      }
-
-      doc.autoTable({
-        startY: 44,
-        head: tableHead,
-        body: [...tableBody, totalRow],
-        theme: 'striped',
-        styles: { fontSize: d.isConsolidated ? 7 : 8, cellPadding: d.isConsolidated ? 1.2 : 1.8 },
-        headStyles: { fillColor:[26,111,181], textColor:255, fontStyle:'bold', fontSize: d.isConsolidated ? 7 : 8 },
-        alternateRowStyles: { fillColor:[240,247,255] },
-        didParseCell: (data) => {
-          if (data.row.index === tableBody.length) {
-            data.cell.styles.fontStyle = 'bold';
-            data.cell.styles.fillColor = [220,238,255];
-          }
-        }
-      });
-
-      const afterTable = doc.lastAutoTable.finalY + 5;
-
-      // Performance summary
-      doc.setFontSize(9); doc.setFont(undefined,'bold'); doc.setTextColor(26,111,181);
-      doc.text('PERFORMANCE SUMMARY', 14, afterTable);
-      doc.setTextColor(0,0,0); doc.setFont(undefined,'normal'); doc.setFontSize(8.5);
-      const perfItems = [
-        [`Stream Position: ${d.streamRank > 0 ? d.streamRank+' / '+students.filter(s=>s.streamId===stu.streamId).length : '—'}`,
-         `Overall Position: ${d.overallRank > 0 ? d.overallRank+' / '+students.length : '—'}`],
-        [`Mean Score: ${d.mean.toFixed(2)}`, `Total Points: ${d.totalPoints}`],
-        [`Grade: ${d.mGrade.grade} — ${d.mGrade.label}`, ''],
-      ];
-      perfItems.forEach((row, ri) => {
-        doc.text(row[0], 14, afterTable+6+ri*5);
-        if (row[1]) doc.text(row[1], PW/2, afterTable+6+ri*5);
-      });
-
-      const afterPerf = afterTable + 6 + perfItems.length*5 + 5;
-
-      // Remarks boxes
-      doc.setFontSize(9); doc.setFont(undefined,'bold'); doc.setTextColor(26,111,181);
-      doc.text("CLASS TEACHER'S REMARKS", 14, afterPerf);
-      doc.setTextColor(0,0,0); doc.setFont(undefined,'normal'); doc.setFontSize(8);
-      const ctLines = doc.splitTextToSize(ctRemark||'…………………………………………………………', PW-28);
-      doc.text(ctLines, 14, afterPerf+5);
-      const afterCT = afterPerf + 5 + ctLines.length*4.5 + 3;
-      doc.text('Signature: ……………………………  Date: …………………', 14, afterCT);
-
-      const afterCTSig = afterCT + 8;
-      doc.setFontSize(9); doc.setFont(undefined,'bold'); doc.setTextColor(26,111,181);
-      doc.text("PRINCIPAL'S REMARKS", 14, afterCTSig);
-      doc.setTextColor(0,0,0); doc.setFont(undefined,'normal'); doc.setFontSize(8);
-      const prLines = doc.splitTextToSize(prRemark||'…………………………………………………………', PW-28);
-      doc.text(prLines, 14, afterCTSig+5);
-      const afterPR = afterCTSig + 5 + prLines.length*4.5 + 3;
-      doc.text('Signature: ……………………………  Date: …………………', 14, afterPR);
-
-      // Fee info — per-student balance from fee records
-      loadFees();
-      const rpTermOverride2 = document.getElementById('rpTerm')?.value || '';
-      const rpYearOverride2 = document.getElementById('rpYear')?.value || '';
-      const feeLookupTerm2 = rpTermOverride2 || (d.exam?.term) || '';
-      const feeLookupYear2 = rpYearOverride2 || (d.exam?.year ? String(d.exam.year) : '');
-      let stuFeeBalance  = '';
-      let stuFeeNextTerm = feeNextTerm;
-
-      // Primary: exact match for exam term/year
-      const exactRec2 = feeLookupTerm2 && feeLookupYear2
-        ? feeRecords.find(r => r.studentId===stu.id && r.term===feeLookupTerm2 && String(r.year)===feeLookupYear2)
-        : null;
-      if (exactRec2) {
-        stuFeeBalance = String(getRecordBalance(exactRec2));
-      } else {
-        // Fallback: most recent fee record for this student
-        const stuRecs2 = feeRecords.filter(r => r.studentId===stu.id);
-        if (stuRecs2.length) {
-          const termOrder2 = {'Term 1':1,'Term 2':2,'Term 3':3};
-          stuRecs2.sort((a,b) => {
-            const yd = parseInt(b.year) - parseInt(a.year);
-            if (yd !== 0) return yd;
-            return (termOrder2[b.term]||0) - (termOrder2[a.term]||0);
-          });
-          stuFeeBalance = String(getRecordBalance(stuRecs2[0]));
-        }
-      }
-      // Next-term fee auto-lookup
-      if (stuFeeNextTerm === '' && feeLookupTerm2 && feeLookupYear2) {
-        const termMap2 = {'Term 1':'Term 2','Term 2':'Term 3','Term 3':'Term 1'};
-        const nxtTerm2 = termMap2[feeLookupTerm2] || feeLookupTerm2;
-        const nxtYear2 = feeLookupTerm2==='Term 3' ? String(parseInt(feeLookupYear2)+1) : feeLookupYear2;
-        const struct2  = feeStructures.find(f => f.classId===stu.classId && f.term===nxtTerm2 && String(f.year)===nxtYear2);
-        if (struct2) stuFeeNextTerm = String(struct2.totalFee);
-      }
-      if (stuFeeBalance !== '') {
-        const afterPRSig = afterPR + 8;
-        doc.setFontSize(9); doc.setFont(undefined,'bold'); doc.setTextColor(26,111,181);
-        doc.text('FEE STATEMENT', 14, afterPRSig);
-        doc.setTextColor(0,0,0); doc.setFont(undefined,'normal'); doc.setFontSize(8.5);
-        doc.text(`Fee Balance This Term: KES ${parseFloat(stuFeeBalance||0).toLocaleString()}`, 14, afterPRSig+5);
-        if (stuFeeNextTerm !== '') doc.text(`Fees for Next Term: KES ${parseFloat(stuFeeNextTerm||0).toLocaleString()}`, PW/2, afterPRSig+5);
-      }
-
-      // Footer
-      doc.setFillColor(240,247,255); doc.rect(0,PH-14,PW,14,'F');
-      doc.setFontSize(8); doc.setTextColor(100,116,139); doc.setFont(undefined,'normal');
-      doc.text(`School Closed: ${schoolClosed||'……………'}  |  Next Term Opens: ${nextOpen||'……………'}`, 14, PH-7);
-      doc.text(`Printed: ${new Date().toLocaleDateString()}`, PW-14, PH-7, {align:'right'});
-    });
-
-    const exam = exams.find(e=>e.id===examId);
-    doc.save(`reports_${exam?.name||'exam'}_${stuList.length}students.pdf`);
-    showToast(`PDF with ${stuList.length} report(s) downloaded ✓`,'success');
-  } catch(err) {
-    showToast('PDF generation error: '+err.message,'error');
-    console.error(err);
+  // Make sure reports are generated first
+  const area = document.getElementById('reportPreviewArea');
+  const forms = area ? area.querySelectorAll('.report-form') : [];
+  if (!forms.length) {
+    showToast('Generate reports first, then export','warning');
+    return;
   }
+
+  if (!window.html2canvas) {
+    showToast('html2canvas not loaded — try refreshing the page', 'error');
+    return;
+  }
+
+  const exam = exams.find(e => e.id === examId);
+  const fileName = `reports_${exam?.name||'exam'}.pdf`;
+
+  showToast(`Exporting ${forms.length} report(s) as PDF — please wait…`, 'info');
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const PW = 210, PH = 297;
+
+  const renderForm = (form, idx) => new Promise(resolve => {
+    // Temporarily force exact A4 pixel size for clean capture
+    const origStyle = form.getAttribute('style') || '';
+    form.style.width = '794px';  // 210mm at 96dpi
+    form.style.height = '1123px'; // 297mm at 96dpi
+    form.style.overflow = 'hidden';
+    form.style.boxSizing = 'border-box';
+
+    html2canvas(form, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor: '#ffffff',
+      logging: false,
+      width: 794,
+      height: 1123,
+      windowWidth: 794,
+    }).then(canvas => {
+      // Restore original style
+      form.setAttribute('style', origStyle);
+
+      if (idx > 0) doc.addPage();
+      const imgData = canvas.toDataURL('image/jpeg', 0.97);
+      doc.addImage(imgData, 'JPEG', 0, 0, PW, PH);
+      resolve();
+    }).catch(err => {
+      form.setAttribute('style', origStyle);
+      console.error('html2canvas error:', err);
+      resolve();
+    });
+  });
+
+  // Render all forms sequentially then save
+  (async () => {
+    for (let i = 0; i < forms.length; i++) {
+      await renderForm(forms[i], i);
+    }
+    doc.save(fileName);
+    showToast(`PDF with ${forms.length} report(s) downloaded ✓`, 'success');
+  })();
 }
 
 
-// ═══════════════════════════════════════════════
-//  TIMETABLE — EduSchedule Generator v3 (Integrated)
-//  All functions prefixed es_ to avoid conflicts
-// ═══════════════════════════════════════════════
-
-/* =====================================================
-   STATE
-===================================================== */
-const ES_DB_KEY = 'eduschedule_v3';
-
-let es_state = {
-  school:   { name:'', daysPerWeek:5, lessonsPerDay:9, lessonDuration:40, schoolStart:'07:30', breaks:[] },
-  classes:  [],   // [{id, grade, stream, students}]
-  subjects: [],   // [{id, name, lessonsPerWeek, priority, double, color, grades}]
-  teachers: [],   // [{id, name, subjects[], maxPerDay, maxPerWeek, availability{}}]
-  rooms:    [],   // [{id, name, type, capacity, subjects[]}]
-  timetable:{},   // {classId: {day: {period: {subjectId, teacherId, roomId, locked}}}}
-};
-
-const ES_COLORS = [
-  '#4f7cff','#7c3aed','#06b6d4','#10b981','#f59e0b',
-  '#ef4444','#ec4899','#8b5cf6','#f97316','#14b8a6',
-  '#64748b','#84cc16','#a855f7','#0ea5e9','#fb7185',
-  '#22d3ee','#34d399','#fbbf24','#f87171','#c084fc'
-];
-
-const ES_DAY_NAMES  = ['Mon','Tue','Wed','Thu','Fri','Sat'];
-const ES_DAY_FULL   = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-const ES_GRADE_LIST = ['Grade 7','Grade 8','Grade 9','Form 1','Form 2','Form 3','Form 4'];
-
-/* =====================================================
-   INIT
-===================================================== */
-// EduSchedule init — called when Charanas navigates to the timetable section
-let es_initialized = false;
 function es_initApp() {
   if (!es_initialized) {
     es_initialized = true;
@@ -8640,26 +8508,34 @@ function buildReceiptHTML({ stu, cls, term, year, totalFee, payment, balBefore, 
 
 function printLastReceipt() {
   if (!lastReceiptHtml) { showToast('No receipt to print','error'); return; }
-  const win = window.open('', '_blank', 'width=500,height=700');
+  const win = window.open('', '_blank', 'width=520,height=750');
   win.document.write(`<!DOCTYPE html><html><head><title>Fee Receipt</title><style>
-    body{font-family:'Segoe UI',sans-serif;padding:1.5rem;color:#1e293b;background:#fff}
-    .fee-receipt{max-width:380px;margin:0 auto;border:2px solid #1a6fb5;border-radius:10px;padding:1.2rem;background:#fff}
+    *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}
+    @page{size:A5 portrait;margin:10mm}
+    body{font-family:'Segoe UI',Arial,sans-serif;padding:1.5rem;color:#1e293b;background:#fff;margin:0}
+    .fee-receipt{max-width:420px;margin:0 auto;border:2px solid #1a6fb5;border-radius:10px;padding:1.2rem;background:#fff}
     .rcpt-header{display:flex;gap:.75rem;align-items:flex-start;margin-bottom:.75rem}
     .rcpt-logo{width:40px;height:40px;background:linear-gradient(135deg,#1a6fb5,#0ea5e9);border-radius:8px;color:#fff;font-weight:800;font-size:.9rem;display:flex;align-items:center;justify-content:center}
-    .rcpt-school{flex:1} .rcpt-school strong{font-size:.95rem;color:#1e293b}
+    .rcpt-school{flex:1}.rcpt-school strong{font-size:.95rem;color:#1e293b}
     .rcpt-no{text-align:right;min-width:7rem}
     .rcpt-divider{border-top:2px dashed #1a6fb5;margin:.6rem 0}
     .rcpt-divider-sm{border-top:1px solid #e2e8f0;margin:.4rem 0}
     .rcpt-body{display:flex;flex-direction:column;gap:.3rem}
     .rcpt-row{display:flex;justify-content:space-between;align-items:center;font-size:.82rem;padding:.15rem 0}
-    .rcpt-lbl{color:#64748b;font-size:.78rem} .rcpt-val{font-weight:600;color:#1e293b}
-    .rcpt-paid-row{background:#f0fdf4;border-radius:6px;padding:.3rem .5rem;margin:.25rem 0}
-    .rcpt-bal-row{background:#fef3c7;border-radius:6px;padding:.3rem .5rem}
+    .rcpt-lbl{color:#64748b;font-size:.78rem}.rcpt-val{font-weight:600;color:#1e293b}
+    .rcpt-paid-row{background:#f0fdf4!important;border-radius:6px;padding:.3rem .5rem;margin:.25rem 0}
+    .rcpt-bal-row{background:#fef3c7!important;border-radius:6px;padding:.3rem .5rem}
     .rcpt-footer{display:flex;justify-content:space-between;margin-top:.75rem;padding-top:.5rem;border-top:1px solid #e2e8f0;font-size:.72rem;color:#94a3b8}
-    @media print{body{padding:0} .fee-receipt{border-color:#000;max-width:100%}}
+    @media print{
+      body{padding:0}
+      .fee-receipt{border:2px solid #1a6fb5!important;max-width:100%;border-radius:10px!important}
+      .rcpt-logo{background:linear-gradient(135deg,#1a6fb5,#0ea5e9)!important}
+      .rcpt-paid-row{background:#f0fdf4!important}
+      .rcpt-bal-row{background:#fef3c7!important}
+    }
   </style></head><body>${lastReceiptHtml}</body></html>`);
   win.document.close();
-  setTimeout(() => { win.focus(); win.print(); }, 300);
+  setTimeout(() => { win.focus(); win.print(); }, 400);
 }
 
 // ═══════════════════════════════════════════
@@ -8930,7 +8806,9 @@ function printSingleReminder(stuId, term, year) {
     .rm-amount-row:last-child{border:none} .rm-outstanding{background:#fff1f2;border-radius:4px;padding:.3rem .5rem}
     p{font-size:.85rem;line-height:1.5;margin:.5rem 0}
     .rm-footer{display:flex;justify-content:space-between;margin-top:1rem;padding-top:.75rem;border-top:2px dashed #e2e8f0;font-size:.75rem;color:#94a3b8}
-    @media print{button{display:none}}
+    *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+    @page{size:A5 portrait;margin:12mm}
+    @media print{button{display:none!important}.rm-badge{background:#dc2626!important;color:#fff!important}.rm-outstanding{background:#fff1f2!important}}
   </style></head><body>
     <div class="rm-header"><div class="rm-badge">⚠️ FEE REMINDER</div><div>${new Date().toLocaleDateString('en-KE',{day:'2-digit',month:'long',year:'numeric'})}</div></div>
     <div class="rm-school">${settings.schoolName || 'School'}</div>
@@ -8996,7 +8874,7 @@ function printAllReminders() {
   }).join('');
 
   const win = window.open('', '_blank', 'width=700,height=800');
-  win.document.write(`<!DOCTYPE html><html><head><title>Fee Reminders</title><style>body{font-family:'Segoe UI',sans-serif;padding:2rem;color:#1e293b;max-width:600px;margin:0 auto}@media print{button{display:none}}</style></head><body>
+  win.document.write(`<!DOCTYPE html><html><head><title>Fee Reminders</title><style>body{font-family:'Segoe UI',sans-serif;padding:2rem;color:#1e293b;max-width:600px;margin:0 auto}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}@page{size:A4 portrait;margin:12mm}@media print{button{display:none!important}}</style></head><body>
     <div style="text-align:center;margin-bottom:2rem">
       <h2 style="color:#1a6fb5">${settings.schoolName||'School'} — Fee Reminders</h2>
       <p style="color:#64748b;font-size:.85rem">Generated: ${new Date().toLocaleString()} | ${filterTerm||'All Terms'} ${filterYear||''} | ${defaulters.length} students</p>
@@ -9304,7 +9182,9 @@ function downloadFeeImportTemplate() {
     th{background:#1a6fb5;color:#fff;padding:.5rem;text-align:left}
     td{padding:.45rem;border-bottom:1px solid #e2e8f0}
     tfoot td{font-weight:700;background:#f8fafc;border-top:2px solid #1a6fb5}
-    @media print{button{display:none}}
+    *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+    @page{size:A5 portrait;margin:12mm}
+    @media print{button{display:none!important}.rm-badge{background:#dc2626!important;color:#fff!important}.rm-outstanding{background:#fff1f2!important}}
   </style></head><body>
     <h2>${settings.schoolName||'School'} — Fee Collection Report</h2>
     <p style="color:#64748b;font-size:.85rem">${filterTerm||'All Terms'} ${filterYear||''} | Generated: ${new Date().toLocaleString()}</p>

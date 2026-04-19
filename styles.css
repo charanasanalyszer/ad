@@ -484,13 +484,58 @@ tbody tr:hover { background:rgba(26,111,181,.03); }
 
 /* Print */
 @media print {
-  body { background:#fff!important; }
+  @page { size: A4 portrait; margin: 0; }
+
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+
+  body { background:#fff!important; margin:0; padding:0; }
+
+  /* Hide all UI chrome */
   .sidebar,.topbar,.ph,.tab-bar,.btn,.toast,.modal-overlay,
   .card:not(#meritListWrap):not(.report-form),
-  #meritListWrap .card-toolbar { display:none!important; }
+  #meritListWrap .card-toolbar,
+  .rf-export-btn, .rpControls, #reportControls,
+  .mbn-item, .mobile-bottom-nav, #mobileBottomNav, #mbnRestoreTab { display:none!important; }
+
   .main { margin:0!important;padding:0!important;max-width:100%!important;width:100%!important;overflow:visible!important; }
-  #meritListWrap { border:none!important;box-shadow:none!important;padding:0!important; }
-  .report-form { border:none!important;box-shadow:none!important;page-break-after:always; }
+
+  /* ── Report Form: exactly one A4 page ── */
+  .report-form {
+    width: 210mm !important;
+    min-height: 0 !important;
+    max-height: 297mm !important;
+    height: 297mm !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 10mm 12mm !important;
+    border: none !important;
+    box-shadow: none !important;
+    page-break-after: always !important;
+    break-after: page !important;
+    box-sizing: border-box !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  /* Preserve all table borders and backgrounds */
+  .rf-marks-table, .rf-marks-table th, .rf-marks-table td {
+    border-color: #a0bdd8 !important;
+  }
+  .rf-marks-table th { background: #f0f7ff !important; color: #1a6fb5 !important; }
+  .rf-marks-table tr:nth-child(even) td { background: #f8fbff !important; }
+  .rf-marks-table .total-row td { background: #dbeafe !important; border-top: 2px solid #1a6fb5 !important; }
+
+  .rf-section-title { background: #7c3aed !important; color: #fff !important; }
+  .rf-section-body { border-color: #1a6fb5 !important; }
+  .rf-header { border-bottom-color: #7c3aed !important; }
+  .rf-footer { border-top-color: #16a34a !important; }
+
+  /* Merit list: keep borders and alternating rows */
+  #meritListWrap { border:none!important; box-shadow:none!important; padding:0!important; }
+  #meritListWrap table { font-size: 8.5pt !important; }
+  #meritListWrap th { background: #f0f7ff !important; }
+  #meritListWrap tr:nth-child(even) td { background: #f8fbff !important; }
+
   table { font-size:9pt!important; }
   .tbl-wrap { border:none!important; }
   h3 { font-size:12pt!important; }
@@ -854,6 +899,7 @@ tbody tr:hover { background:rgba(26,111,181,.03); }
 .tt-alloc-table input[type=number] { width:52px; padding:2px 4px; border:1px solid var(--border); border-radius:4px; background:var(--surface); color:var(--text); font-family:inherit; font-size:.8rem; }
 
 @media print {
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
   .tt-wrap { border: none; }
   .tt-tch-wrap { border: none; }
   .tt-cell:hover { background: transparent; }
