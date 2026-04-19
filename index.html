@@ -684,12 +684,18 @@
       <div class="card">
         <div class="ctbar">
           <h3>All Students</h3>
-          <div style="display:flex;gap:.75rem;flex-wrap:wrap">
-            <div class="search-box"><span>🔍</span><input type="text" placeholder="Search..." oninput="filterTbl('stuTbl',this.value)"/></div>
-            <select style="height:36px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);padding:0 .7rem;font-family:inherit;font-size:.85rem" onchange="filterStudentsGender(this.value)">
+          <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:center">
+            <div class="search-box"><span>🔍</span><input type="text" id="stuSearchBox" placeholder="Search name/adm..." oninput="applyStudentFilters()"/></div>
+            <select id="stuGenderFilter" style="height:36px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);padding:0 .7rem;font-family:inherit;font-size:.85rem" onchange="applyStudentFilters()">
               <option value="">All Genders</option><option value="M">Male</option><option value="F">Female</option>
             </select>
-            <button class="btn btn-outline btn-sm" onclick="exportStudentsExcel()">⬇ Excel</button>
+            <select id="stuClassFilter" style="height:36px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);padding:0 .7rem;font-family:inherit;font-size:.85rem" onchange="applyStudentFilters()">
+              <option value="">All Classes</option>
+            </select>
+            <select id="stuStreamFilter" style="height:36px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);padding:0 .7rem;font-family:inherit;font-size:.85rem" onchange="applyStudentFilters()">
+              <option value="">All Streams</option>
+            </select>
+            <button class="btn btn-outline btn-sm" onclick="exportFilteredStudentsExcel()" title="Export currently filtered students (full details)">⬇ Export List</button>
             <button class="btn btn-danger btn-sm" id="stuBulkDelBtn" style="display:none" onclick="deleteSelectedStudents()">🗑 Delete Selected (<span id="stuSelCount">0</span>)</button>
           </div>
         </div>
@@ -697,6 +703,24 @@
           <table id="stuTbl">
             <thead><tr><th><input type="checkbox" id="stuSelectAll" onchange="toggleSelectAllStudents(this)" title="Select all"/></th><th onclick="sortTable('stuBody',1,'num')" class="sortable-th"># <span class="sort-ico">⇅</span></th><th onclick="sortTable('stuBody',2,'str')" class="sortable-th">Adm No <span class="sort-ico">⇅</span></th><th onclick="sortTable('stuBody',3,'str')" class="sortable-th">Name <span class="sort-ico">⇅</span></th><th onclick="sortTable('stuBody',4,'str')" class="sortable-th">Gender <span class="sort-ico">⇅</span></th><th onclick="sortTable('stuBody',5,'str')" class="sortable-th">Class <span class="sort-ico">⇅</span></th><th onclick="sortTable('stuBody',6,'str')" class="sortable-th">Stream <span class="sort-ico">⇅</span></th><th onclick="sortTable('stuBody',7,'str')" class="sortable-th">Parent <span class="sort-ico">⇅</span></th><th>Contact</th><th>Subjects</th><th>Actions</th></tr></thead>
             <tbody id="stuBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Archived Students -->
+      <div class="card" id="archivedStudentsCard" style="margin-top:1.5rem;border-left:4px solid #f59e0b;display:none">
+        <div class="ctbar" style="margin-bottom:.75rem">
+          <h3>🗃️ School Archives — Graduated Students</h3>
+          <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:center">
+            <div class="search-box"><span>🔍</span><input type="text" id="archSearchBox" placeholder="Search archived..." oninput="renderArchivedStudents()"/></div>
+            <button class="btn btn-outline btn-sm" onclick="exportArchivedStudentsExcel()">⬇ Export Archives</button>
+          </div>
+        </div>
+        <p style="font-size:.82rem;color:var(--muted);margin-bottom:1rem">Students who have completed the final class and been promoted out. Their academic data is preserved.</p>
+        <div class="tbl-wrap">
+          <table id="archTbl">
+            <thead><tr><th>#</th><th>Adm No</th><th>Name</th><th>Gender</th><th>Last Class</th><th>Last Stream</th><th>Archived Date</th><th>Actions</th></tr></thead>
+            <tbody id="archBody"></tbody>
           </table>
         </div>
       </div>
@@ -743,8 +767,14 @@
           <button class="btn btn-outline btn-sm" onclick="cancelTchEdit()">✕ Cancel</button>
         </div>
       </div>
+      <!-- Teacher self-service: My Class Lists -->
+      <div class="card" id="tchMyClassListCard" style="margin-bottom:1.25rem;border-left:4px solid #0d9488;display:none">
+        <h3>⬇ Download My Class Lists</h3>
+        <p style="font-size:.82rem;color:var(--muted);margin-bottom:1rem">Download the student lists for the subjects and streams you are assigned to teach.</p>
+        <button class="btn btn-primary btn-sm" onclick="downloadMyTeacherClassList()" style="background:linear-gradient(135deg,#0d9488,#059669)">⬇ Download Class Lists (Excel)</button>
+      </div>
+
       <div class="card">
-        <div class="ctbar"><h3>All Teachers</h3>
           <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:center">
             <div class="search-box"><span>🔍</span><input type="text" placeholder="Search..." oninput="filterTbl('tchTbl',this.value)"/></div>
             <button class="btn btn-outline btn-sm" onclick="showTeacherUpload()">⬆ Import Excel</button>
@@ -2389,6 +2419,24 @@
         <div id="broadcastPreview" style="display:none;margin-top:1rem;background:linear-gradient(135deg,#1e40af,#7c3aed);color:#fff;padding:.75rem 1rem;border-radius:8px;font-size:.85rem">
           <strong>📢 Preview:</strong> <span id="broadcastPreviewText"></span>
         </div>
+      </div>
+
+      <!-- Promote Learners -->
+      <div class="card" style="margin-bottom:1.5rem;border-left:4px solid #10b981">
+        <h3>🎓 Promote Learners to Next Class</h3>
+        <p style="font-size:.82rem;color:var(--muted);margin-bottom:1rem">Move all students up one class level. Students in the final class will be moved to the school's archive. This cannot be undone.</p>
+        <div class="frow c2" style="margin-bottom:.75rem">
+          <div class="fg">
+            <label>Target School</label>
+            <select id="promoteSchoolSel" style="width:100%;height:36px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);padding:0 .7rem;font-family:inherit;font-size:.85rem">
+              <option value="__all__">🌐 All Schools (Global Promotion)</option>
+            </select>
+          </div>
+          <div class="fg" style="display:flex;flex-direction:column;justify-content:flex-end">
+            <button class="btn btn-primary btn-sm" onclick="platPreviewPromotion()" style="background:linear-gradient(135deg,#10b981,#059669)">🔍 Preview &amp; Promote</button>
+          </div>
+        </div>
+        <div id="promotePreviewBox" style="display:none;margin-top:.75rem;padding:.75rem 1rem;border-radius:8px;background:var(--blue-lt,rgba(59,130,246,.07));border:1px solid var(--border);font-size:.83rem"></div>
       </div>
 
       <!-- Manage Schools -->

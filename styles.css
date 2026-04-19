@@ -2370,3 +2370,14 @@ button.tb-logout-btn:hover { background: #ef4444 !important; color: #fff !import
 .plat-nav-toggle.sm { width: 36px; height: 20px; }
 .plat-nav-toggle.sm .plat-nav-slider::before { height: 14px; width: 14px; }
 .plat-nav-toggle.sm input:checked + .plat-nav-slider::before { transform: translateX(16px); }
+
+/* ═══ Archive & Promote ═══ */
+#archivedStudentsCard { transition: border-color .2s; }
+#archTbl th { background: rgba(245,158,11,.08); }
+#promotePreviewBox { line-height: 1.6; }
+#promotePreviewBox strong { color: var(--text); }
+#tchMyClassListCard { transition: border-color .2s; }
+/* Student filter bar tighter on mobile */
+@media (max-width: 600px) {
+  #stuClassFilter, #stuStreamFilter, #stuGenderFilter { font-size:.78rem; padding:0 .4rem; }
+}

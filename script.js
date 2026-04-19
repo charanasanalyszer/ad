@@ -16,6 +16,13 @@ let   currentSchoolId       = null;
 function loadPlatform()  { try { platformSchools = JSON.parse(localStorage.getItem(PLATFORM_SCHOOLS_KEY)) || []; } catch { platformSchools = []; } }
 function savePlatform()  { localStorage.setItem(PLATFORM_SCHOOLS_KEY, JSON.stringify(platformSchools)); }
 
+// ═══════════════ SCHOOL ARCHIVE (GRADUATED STUDENTS) ═══════════════
+const K_SCHOOL_ARCHIVE = schoolId => schoolId + '_ei_archived_students';
+function getSchoolArchive(schoolId)       { try { return JSON.parse(localStorage.getItem(K_SCHOOL_ARCHIVE(schoolId))) || []; } catch { return []; } }
+function saveSchoolArchive(schoolId, data){ localStorage.setItem(K_SCHOOL_ARCHIVE(schoolId), JSON.stringify(data)); }
+function getCurrentArchive()              { return getSchoolArchive(currentSchoolId); }
+function saveCurrentArchive(data)         { saveSchoolArchive(currentSchoolId, data); }
+
 function getPlatformCreds() {
   try { return JSON.parse(localStorage.getItem(PLATFORM_CREDS_KEY)) || null; } catch { return null; }
 }
@@ -814,6 +821,8 @@ function renderPlatformDashboard() {
   renderBroadcastPreview();
   // Schools list
   renderPlatformSchoolMgmtList();
+  // Promote dropdown
+  populatePromoteSchoolDropdown();
   // Platform exams
   renderPlatExamList();
   // Platform paper upload list
@@ -827,6 +836,7 @@ function renderPlatformDashboard() {
 function renderPlatformSchoolMgmtList() {
   const el = document.getElementById('platformSchoolMgmtList'); if(!el) return;
   loadPlatform();
+  populatePromoteSchoolDropdown();
   if (!platformSchools.length) { el.innerHTML='<p style="color:var(--muted);font-size:.85rem">No schools yet. Create one below.</p>'; return; }
   el.innerHTML = platformSchools.map(s => {
     const isActive = s.active !== false;
@@ -1703,6 +1713,7 @@ function finishLogin(school) {
   try { setExamCategory('regular'); } catch(e) { console.warn('setExamCategory', e); }
   try { hookReportFeeAutoFill(); } catch(e) { console.warn('hookReportFeeAutoFill', e); }
   try { renderExamSubjectCheckboxes([]); } catch(e) { console.warn('renderExamSubjectCheckboxes', e); }
+  try { renderArchivedStudents(); } catch(e) { console.warn('renderArchivedStudents', e); }
   const smsCEl = document.getElementById('smsCredits'); if (smsCEl) smsCEl.textContent = smsCredits;
   document.getElementById('loginScreen').style.display = 'none';
   saveSession();
@@ -1836,6 +1847,7 @@ function initApp() {
         populateGSDropdowns(); renderGradingSystemsTab();
         setExamCategory('regular'); hookReportFeeAutoFill();
         renderExamSubjectCheckboxes([]);
+        try { renderArchivedStudents(); } catch(e) {}
         const smsCEl = document.getElementById('smsCredits'); if (smsCEl) smsCEl.textContent = smsCredits;
         launchApp();
         return;
@@ -2050,6 +2062,7 @@ function getStudentTotalForLatestExam(studentId) {
 // ═══════════════ POPULATE DROPDOWNS ═══════════════
 function populateAllDropdowns() {
   populateStrTeacherDropdown();
+  populateStudentFilterDropdowns();
   // Classes
   ['examClass','stuClass','strClass','rpStream'].forEach(id => {
     const el = document.getElementById(id); if (!el) return;
@@ -2074,6 +2087,9 @@ function populateAllDropdowns() {
   // Student class triggers stream update
   const stuCls = document.getElementById('stuClass');
   if (stuCls) stuCls.addEventListener('change', updateStuStreamDropdown);
+  // Student class filter triggers stream filter update
+  const stuClassFilter = document.getElementById('stuClassFilter');
+  if (stuClassFilter) stuClassFilter.addEventListener('change', () => { populateStudentFilterDropdowns(); applyStudentFilters(); });
 }
 
 function updateStuStreamDropdown() {
@@ -3524,9 +3540,37 @@ function renderSummaryAnalytics() {
 }
 
 // ═══════════════ STUDENTS CRUD ═══════════════
-function renderStudents(filter='', genderFilter='') {
-  let list = filter ? students.filter(s=>s.name.toLowerCase().includes(filter)||s.adm.includes(filter)) : [...students];
-  if (genderFilter) list=list.filter(s=>s.gender===genderFilter);
+function applyStudentFilters() {
+  const text    = (document.getElementById('stuSearchBox')?.value || '').toLowerCase();
+  const gender  = document.getElementById('stuGenderFilter')?.value || '';
+  const classId = document.getElementById('stuClassFilter')?.value || '';
+  const streamId= document.getElementById('stuStreamFilter')?.value || '';
+  renderStudents(text, gender, classId, streamId);
+}
+
+function populateStudentFilterDropdowns() {
+  const clsSel = document.getElementById('stuClassFilter');
+  const strSel = document.getElementById('stuStreamFilter');
+  if (clsSel) {
+    const cur = clsSel.value;
+    clsSel.innerHTML = '<option value="">All Classes</option>' + classes.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+    clsSel.value = cur;
+  }
+  if (strSel) {
+    const cur = strSel.value;
+    const classId = document.getElementById('stuClassFilter')?.value || '';
+    const filteredStreams = classId ? streams.filter(s=>s.classId===classId) : streams;
+    strSel.innerHTML = '<option value="">All Streams</option>' + filteredStreams.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
+    strSel.value = (cur && filteredStreams.find(s=>s.id===cur)) ? cur : '';
+  }
+}
+
+function renderStudents(filter='', genderFilter='', classFilter='', streamFilter='') {
+  let list = [...students];
+  if (filter)       list = list.filter(s=>s.name.toLowerCase().includes(filter)||s.adm.toLowerCase().includes(filter));
+  if (genderFilter) list = list.filter(s=>s.gender===genderFilter);
+  if (classFilter)  list = list.filter(s=>s.classId===classFilter);
+  if (streamFilter) list = list.filter(s=>s.streamId===streamFilter);
   // Apply column sort
   const sc=sortState.students.col, sd=sortState.students.dir;
   list.sort((a,b)=>{
@@ -3575,7 +3619,7 @@ function renderStudents(filter='', genderFilter='') {
   updateBulkDeleteUI();
 }
 
-function filterStudentsGender(g) { renderStudents('',g); }
+function filterStudentsGender(g) { applyStudentFilters(); }
 
 function onStuSelChange() {
   const all  = document.querySelectorAll('.stu-sel-chk');
@@ -3608,7 +3652,7 @@ function deleteSelectedStudents() {
     subjects.forEach(sub=>{ sub.studentIds=(sub.studentIds||[]).filter(x=>x!==id); });
   });
   save(K.students,students); save(K.marks,marks); save(K.subjects,subjects);
-  renderStudents(); renderDashboard(); populateAllDropdowns();
+  renderStudents(); renderDashboard(); populateAllDropdowns(); renderArchivedStudents();
   showToast(`${ids.length} student(s) deleted`,'info');
 }
 
@@ -3767,7 +3811,7 @@ function saveStudent() {
     save(K.subjects,subjects);
     showToast('Student added ✓','success');
   }
-  save(K.students,students); cancelStuEdit(); renderStudents(); renderDashboard(); populateAllDropdowns();
+  save(K.students,students); cancelStuEdit(); renderStudents(); renderDashboard(); populateAllDropdowns(); renderArchivedStudents();
 }
 
 function editStudent(id) {
@@ -3803,7 +3847,7 @@ function deleteStudent(id) {
   marks=marks.filter(m=>m.studentId!==id);
   subjects.forEach(sub=>{sub.studentIds=(sub.studentIds||[]).filter(x=>x!==id);});
   save(K.students,students); save(K.marks,marks); save(K.subjects,subjects);
-  renderStudents(); renderDashboard(); showToast('Student deleted','info');
+  renderStudents(); renderDashboard(); renderArchivedStudents(); showToast('Student deleted','info');
 }
 
 // Student Excel upload
@@ -3855,14 +3899,32 @@ function downloadStudentTemplate() {
   XLSX.writeFile(wb,'students_template.xlsx');
 }
 
-function exportStudentsExcel() {
-  const data=students.map(s=>{
+function exportStudentsExcel() { exportFilteredStudentsExcel(); }
+
+function exportFilteredStudentsExcel() {
+  const text     = (document.getElementById('stuSearchBox')?.value || '').toLowerCase();
+  const gender   = document.getElementById('stuGenderFilter')?.value || '';
+  const classId  = document.getElementById('stuClassFilter')?.value || '';
+  const streamId = document.getElementById('stuStreamFilter')?.value || '';
+  let list = [...students];
+  if (text)     list = list.filter(s=>s.name.toLowerCase().includes(text)||s.adm.toLowerCase().includes(text));
+  if (gender)   list = list.filter(s=>s.gender===gender);
+  if (classId)  list = list.filter(s=>s.classId===classId);
+  if (streamId) list = list.filter(s=>s.streamId===streamId);
+  if (!list.length) { showToast('No students match current filters','warning'); return; }
+  list.sort((a,b)=>a.name.localeCompare(b.name));
+  const data = list.map((s,i)=>{
     const cls=classes.find(c=>c.id===s.classId); const str=streams.find(x=>x.id===s.streamId);
-    return { AdmNo:s.adm,Name:s.name,Gender:s.gender,Class:cls?.name||'',Stream:str?.name||'',ParentName:s.parent,Contact:s.contact };
+    const subNames=(s.subjectIds||[]).map(sid=>subjects.find(x=>x.id===sid)?.name||'').filter(Boolean).join(', ');
+    return { '#':i+1, AdmNo:s.adm, Name:s.name, Gender:s.gender==='M'?'Male':'Female', Class:cls?.name||'', Stream:str?.name||'', DOB:s.dob||'', ParentName:s.parent||'', Contact:s.contact||'', Subjects:subNames };
   });
   const ws=XLSX.utils.json_to_sheet(data); const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,'Students');
-  XLSX.writeFile(wb,'students_list.xlsx');
+  const clsName = classId ? (classes.find(c=>c.id===classId)?.name||'Class') : 'All';
+  const strName = streamId ? (streams.find(s=>s.id===streamId)?.name||'Stream') : '';
+  const sheetLabel = [clsName, strName].filter(Boolean).join('_') || 'Students';
+  XLSX.utils.book_append_sheet(wb,ws,sheetLabel.slice(0,31));
+  XLSX.writeFile(wb,`students_${sheetLabel.replace(/\s+/g,'_')}.xlsx`);
+  showToast(`${list.length} student(s) exported ✓`,'success');
 }
 
 // ═══════════════ TEACHERS CRUD ═══════════════
@@ -3968,6 +4030,7 @@ function renderTeachers() {
       <td><div class="act-cell">
         <button class="icb ed" onclick="editTeacher('${t.id}')" title="Edit">✏️</button>
         <button class="icb dl" onclick="deleteTeacher('${t.id}')" title="Delete">🗑️</button>
+        <button class="icb" style="background:#0d9488;color:#fff;border:none;font-size:.68rem;padding:.2rem .45rem;border-radius:5px" onclick="downloadTeacherSubjectList('${t.id}')" title="Download class list for subjects taught">⬇ Class List</button>
       </div></td>
     </tr>`;
   }).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:1.5rem">No teachers yet.</td></tr>';
@@ -5374,17 +5437,177 @@ function downloadClassList(classId) {
 
 function downloadStreamList(streamId) {
   const str = streams.find(s=>s.id===streamId); if(!str) return;
-  const cls = classes.find(c=>c.id===str.classId);
   const stuList = students.filter(s=>s.streamId===streamId).sort((a,b)=>a.name.localeCompare(b.name));
-  const rows = stuList.map((s,i)=>({
-    '#':i+1, AdmNo:s.adm, Name:s.name, Gender:s.gender,
-    Class:cls?.name||'—', Stream:str.name, ParentName:s.parent||'', Contact:s.contact||''
-  }));
+  const rows = stuList.map((s,i)=>({ '#':i+1, AdmNo:s.adm, Name:s.name, Stream:str.name }));
   if (!rows.length) { showToast('No students in this stream','warning'); return; }
   const ws=XLSX.utils.json_to_sheet(rows); const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,str.name);
-  XLSX.writeFile(wb,`students_${str.name.replace(/\s+/g,'_')}_stream.xlsx`);
-  showToast(`${str.name} stream list downloaded ✓`,'success');
+  XLSX.utils.book_append_sheet(wb,ws,str.name.slice(0,31));
+  XLSX.writeFile(wb,`stream_${str.name.replace(/\s+/g,'_')}.xlsx`);
+  showToast(`${str.name} list downloaded ✓`,'success');
+}
+
+// ═══════════════ TEACHER SUBJECT CLASS LIST DOWNLOAD ═══════════════
+function downloadTeacherSubjectList(teacherId) {
+  const teacher = teachers.find(t=>t.id===teacherId);
+  if (!teacher) return;
+  // Get all streams where teacher is assigned per subject
+  const assignments = streamAssignments.filter(a=>a.teacherId===teacherId);
+  if (!assignments.length) { showToast('Teacher has no subject assignments','warning'); return; }
+  const wb = XLSX.utils.book_new();
+  const processed = new Set();
+  assignments.forEach(a => {
+    const key = a.streamId + '_' + a.subjectId;
+    if (processed.has(key)) return; processed.add(key);
+    const str = streams.find(s=>s.id===a.streamId);
+    const sub = subjects.find(s=>s.id===a.subjectId);
+    if (!str || !sub) return;
+    const cls = classes.find(c=>c.id===str.classId);
+    const stuList = students.filter(s=>s.streamId===a.streamId && (s.subjectIds||[]).includes(a.subjectId)).sort((a,b)=>a.name.localeCompare(b.name));
+    if (!stuList.length) return;
+    const rows = stuList.map((s,i)=>({ '#':i+1, AdmNo:s.adm, Name:s.name, Gender:s.gender==='M'?'Male':'Female', Class:cls?.name||'—', Stream:str.name, Subject:sub.name }));
+    const sheetName = (sub.code+' '+str.name).slice(0,31);
+    const ws = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  });
+  if (!wb.SheetNames || !wb.SheetNames.length) { showToast('No student data found for this teacher\'s subjects','warning'); return; }
+  XLSX.writeFile(wb, `class_list_${teacher.name.replace(/\s+/g,'_')}.xlsx`);
+  showToast(`Class list for ${teacher.name} downloaded ✓`, 'success');
+}
+
+// ═══════════════ ARCHIVED STUDENTS (GRADUATED) ═══════════════
+function renderArchivedStudents() {
+  const card = document.getElementById('archivedStudentsCard');
+  const tbody = document.getElementById('archBody');
+  if (!card || !tbody) return;
+  const isAdmin = currentUser && (currentUser.role==='admin'||currentUser.role==='superadmin');
+  if (!isAdmin) { card.style.display='none'; return; }
+  const archived = getCurrentArchive();
+  card.style.display = archived.length ? '' : 'none';
+  if (!archived.length) return;
+  const searchTerm = (document.getElementById('archSearchBox')?.value||'').toLowerCase();
+  let list = archived;
+  if (searchTerm) list = list.filter(s=>s.name.toLowerCase().includes(searchTerm)||s.adm.toLowerCase().includes(searchTerm));
+  tbody.innerHTML = list.map((s,i)=>`<tr>
+    <td>${i+1}</td>
+    <td style="font-family:var(--mono);font-size:.8rem">${s.adm}</td>
+    <td><strong>${s.name}</strong></td>
+    <td><span class="badge ${s.gender==='M'?'b-m':'b-f'}">${s.gender==='M'?'Male':'Female'}</span></td>
+    <td>${s.lastClass||'—'}</td>
+    <td>${s.lastStream||'—'}</td>
+    <td style="font-size:.8rem;color:var(--muted)">${s.archivedAt ? new Date(s.archivedAt).toLocaleDateString() : '—'}</td>
+    <td><button class="icb" style="background:var(--secondary,#16a34a);color:#fff;border:none;font-size:.7rem;padding:.2rem .45rem;border-radius:5px" onclick="restoreArchivedStudent('${s.id}')" title="Restore to active students">↩ Restore</button></td>
+  </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:1rem">No archived students.</td></tr>';
+}
+
+function restoreArchivedStudent(id) {
+  const archived = getCurrentArchive();
+  const stu = archived.find(s=>s.id===id); if (!stu) return;
+  if (!confirm(`Restore ${stu.name} to active students?`)) return;
+  const { lastClass, lastStream, archivedAt, ...restored } = stu;
+  students.push(restored);
+  save(K.students, students);
+  saveCurrentArchive(archived.filter(s=>s.id!==id));
+  renderStudents(); renderDashboard(); renderArchivedStudents();
+  showToast(`${stu.name} restored ✓`,'success');
+}
+
+function exportArchivedStudentsExcel() {
+  const archived = getCurrentArchive();
+  if (!archived.length) { showToast('No archived students','warning'); return; }
+  const rows = archived.map((s,i)=>({ '#':i+1, AdmNo:s.adm, Name:s.name, Gender:s.gender==='M'?'Male':'Female', LastClass:s.lastClass||'', LastStream:s.lastStream||'', ArchivedDate:s.archivedAt?new Date(s.archivedAt).toLocaleDateString():'' }));
+  const ws=XLSX.utils.json_to_sheet(rows); const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Archived');
+  XLSX.writeFile(wb,'archived_students.xlsx');
+  showToast('Archive exported ✓','success');
+}
+
+// ═══════════════ PLATFORM PROMOTE LEARNERS ═══════════════
+function populatePromoteSchoolDropdown() {
+  const sel = document.getElementById('promoteSchoolSel'); if (!sel) return;
+  loadPlatform();
+  sel.innerHTML = '<option value="__all__">🌐 All Schools (Global Promotion)</option>' +
+    platformSchools.filter(s=>s.active!==false).map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
+}
+
+function platPreviewPromotion() {
+  const schoolId = document.getElementById('promoteSchoolSel')?.value;
+  const box = document.getElementById('promotePreviewBox'); if (!box) return;
+  loadPlatform();
+  const schoolList = schoolId==='__all__' ? platformSchools.filter(s=>s.active!==false) : platformSchools.filter(s=>s.id===schoolId);
+  if (!schoolList.length) { showToast('No schools found','warning'); return; }
+  // Build preview
+  let lines = [];
+  schoolList.forEach(sch => {
+    const prefix = sch.id + '_';
+    const schStudents = (() => { try { return JSON.parse(localStorage.getItem(prefix+'ei_students'))||[]; } catch { return []; } })();
+    const schClasses  = (() => { try { return JSON.parse(localStorage.getItem(prefix+'ei_classes'))||[]; } catch { return []; } })();
+    const schStreams   = (() => { try { return JSON.parse(localStorage.getItem(prefix+'ei_streams'))||[]; } catch { return []; } })();
+    if (!schClasses.length) { lines.push(`<div style="margin-bottom:.4rem"><strong>${sch.name}</strong>: No classes configured — skipped.</div>`); return; }
+    const orderedClasses = [...schClasses].sort((a,b)=>{
+      const lvA=parseFloat(a.level)||0, lvB=parseFloat(b.level)||0;
+      return lvA!==lvB ? lvA-lvB : a.name.localeCompare(b.name);
+    });
+    const finalClassId = orderedClasses[orderedClasses.length-1]?.id;
+    const toArchive = schStudents.filter(s=>s.classId===finalClassId).length;
+    const toPromote = schStudents.length - toArchive;
+    lines.push(`<div style="margin-bottom:.5rem;padding:.5rem .75rem;border-radius:7px;background:rgba(255,255,255,.5);border:1px solid var(--border)">
+      <strong>${sch.name}</strong> — ${schStudents.length} students across ${schClasses.length} classes<br>
+      <span style="color:#10b981">▲ ${toPromote} will be promoted</span> &nbsp;|&nbsp; <span style="color:#f59e0b">🗃 ${toArchive} will be archived (${orderedClasses[orderedClasses.length-1]?.name||'final class'})</span>
+    </div>`);
+  });
+  box.style.display = '';
+  box.innerHTML = `<div style="margin-bottom:.75rem;font-weight:700;font-size:.88rem">📋 Promotion Preview:</div>${lines.join('')}
+    <div style="margin-top:1rem;display:flex;gap:.75rem">
+      <button class="btn btn-primary btn-sm" onclick="confirmAndPromote('${schoolId}')" style="background:linear-gradient(135deg,#10b981,#059669)">✅ Confirm &amp; Promote All</button>
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('promotePreviewBox').style.display='none'">✕ Cancel</button>
+    </div>`;
+}
+
+function confirmAndPromote(schoolId) {
+  loadPlatform();
+  const schoolList = schoolId==='__all__' ? platformSchools.filter(s=>s.active!==false) : platformSchools.filter(s=>s.id===schoolId);
+  if (!confirm(`Promote all students in ${schoolId==='__all__'?'ALL schools':schoolList[0]?.name}?\n\nThis will move students to the next class. Students in the final class will be archived.\n\nThis action cannot be undone.`)) return;
+  let totalPromoted=0, totalArchived=0;
+  schoolList.forEach(sch => {
+    const prefix = sch.id + '_';
+    let schStudents = (() => { try { return JSON.parse(localStorage.getItem(prefix+'ei_students'))||[]; } catch { return []; } })();
+    const schClasses  = (() => { try { return JSON.parse(localStorage.getItem(prefix+'ei_classes'))||[]; } catch { return []; } })();
+    const schStreams   = (() => { try { return JSON.parse(localStorage.getItem(prefix+'ei_streams'))||[]; } catch { return []; } })();
+    if (!schClasses.length || !schStudents.length) return;
+    const orderedClasses = [...schClasses].sort((a,b)=>{
+      const lvA=parseFloat(a.level)||0, lvB=parseFloat(b.level)||0;
+      return lvA!==lvB ? lvA-lvB : a.name.localeCompare(b.name);
+    });
+    const classIndexMap = {}; orderedClasses.forEach((c,i)=>{ classIndexMap[c.id]=i; });
+    let archived = getSchoolArchive(sch.id);
+    const toArchive=[], promoted=[];
+    schStudents.forEach(stu => {
+      const idx = classIndexMap[stu.classId];
+      if (idx === undefined) { promoted.push(stu); return; }
+      if (idx >= orderedClasses.length-1) {
+        // Final class — archive
+        const clsName = orderedClasses[idx]?.name||'';
+        const strName = schStreams.find(s=>s.id===stu.streamId)?.name||'';
+        toArchive.push({...stu, lastClass:clsName, lastStream:strName, archivedAt:new Date().toISOString(), classId:'', streamId:''});
+      } else {
+        // Promote: move to next class, clear stream (find matching stream in next class if possible)
+        const nextCls = orderedClasses[idx+1];
+        const nextStreamMatch = schStreams.find(s=>s.classId===nextCls.id && schStreams.find(curS=>curS.id===stu.streamId)?.name===s.name);
+        promoted.push({...stu, classId:nextCls.id, streamId:nextStreamMatch?.id||''});
+      }
+    });
+    archived = [...archived, ...toArchive];
+    saveSchoolArchive(sch.id, archived);
+    localStorage.setItem(prefix+'ei_students', JSON.stringify(promoted));
+    totalPromoted += promoted.length; totalArchived += toArchive.length;
+    // If currently viewing this school, reload
+    if (currentSchoolId === sch.id) {
+      students = promoted;
+      renderStudents(); renderDashboard(); renderArchivedStudents();
+    }
+  });
+  document.getElementById('promotePreviewBox').style.display='none';
+  showToast(`✅ Done — ${totalPromoted} promoted, ${totalArchived} archived`,'success');
 }
 
 // ═══════════════ MERIT LIST TYPE SWITCHER ═══════════════
@@ -9307,6 +9530,13 @@ function getCurrentTeacher() {
   return teachers.find(t => t.id === currentUser.teacherId) || null;
 }
 
+// ── Teacher self-service: download class list for all their assigned subjects ──
+function downloadMyTeacherClassList() {
+  const t = getCurrentTeacher();
+  if (!t) { showToast('Not logged in as a teacher','error'); return; }
+  downloadTeacherSubjectList(t.id);
+}
+
 // ── Get subjects this teacher teaches (union of stream assignments + default) ──
 function getMySubjectIds() {
   const t = getCurrentTeacher();
@@ -9382,6 +9612,14 @@ function applyRoleBasedUI() {
   // ── Merit list tab ──
   const mlBtn = document.getElementById('tbMeritList') || document.querySelector('[onclick*="tabMeritList"]');
   if (mlBtn) mlBtn.style.display = (!isTeacher || (!globalRestrictAnalytics && (currentUser.canMerit || isClassTch))) ? '' : 'none';
+
+  // ── Teacher self-service: show My Class Lists card only for teachers ──
+  const tchMyCard = document.getElementById('tchMyClassListCard');
+  if (tchMyCard) tchMyCard.style.display = isTeacher ? '' : 'none';
+
+  // ── Archived students card: only for admins ──
+  const archCard = document.getElementById('archivedStudentsCard');
+  if (archCard && !isAdmin) archCard.style.display = 'none';
 
   // ── Subject Analysis tab ──
   const saBtn = document.getElementById('tbSubjectAnalysis') || document.querySelector('[onclick*="tabSubjectAnalysis"]');
