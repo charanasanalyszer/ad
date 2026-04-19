@@ -760,7 +760,7 @@ function enterPlatformDashboard() {
   // Show mobile bottom nav
   const mbn = document.getElementById('mobileBottomNav');
   if (mbn) mbn.style.display = '';
-  // Show/hide nav links
+  // Platform portal: hide school-specific nav, only show Platform Admin link
   ['subjects','classes','teachers','students','timetable','exambuilder','exams','reports','papers','fees','messaging','settings'].forEach(s=>{
     const el=document.querySelector('[data-s="'+s+'"]'); if(el) el.style.display='none';
   });
@@ -1177,31 +1177,47 @@ function applyPlatformNavConfig() {
   const schoolCfg = currentSchoolId ? loadNavConfig(currentSchoolId) : null;
   const cfg = (schoolCfg && Object.keys(schoolCfg).length > 0) ? schoolCfg : globalCfg;
 
+  // First reset all school nav items to visible as baseline
   NAV_CONFIG_SCHEMA.forEach(sec => {
-    const secVisible = cfg[sec.section] !== false;
     if (sec.section !== 'dashboard') {
-      // Sidebar
       const sbLink = document.querySelector('.sb-nav [data-s="'+sec.section+'"]');
-      if (sbLink && sbLink.style.display !== 'none') {
-        sbLink.dataset.platHidden = secVisible ? '' : '1';
-        if (!secVisible) sbLink.style.display = 'none';
-      }
-      // Mobile bottom nav
+      if (sbLink) { sbLink.dataset.platHidden = ''; sbLink.style.display = ''; }
       const mbnLink = document.querySelector('.mbn-item[data-s="'+sec.section+'"]');
-      if (mbnLink) {
-        if (!secVisible) mbnLink.style.display = 'none';
-      }
+      if (mbnLink) mbnLink.style.display = '';
     }
-    // Tabs
     sec.tabs.forEach(tab => {
-      const tabKey = sec.section + '__' + tab.id;
-      const tabVisible = cfg[tabKey] !== false;
       const allBtns = document.querySelectorAll('#'+sec.section+'TabBar .tb, [onclick*="'+tab.id+'"]');
       allBtns.forEach(btn => {
         if (btn.getAttribute('onclick') && btn.getAttribute('onclick').includes(tab.id)) {
-          btn.style.display = tabVisible ? '' : 'none';
+          btn.style.display = '';
         }
       });
+    });
+  });
+
+  // Then apply platform config — hide anything explicitly disabled
+  NAV_CONFIG_SCHEMA.forEach(sec => {
+    const secVisible = cfg[sec.section] !== false;
+    if (sec.section !== 'dashboard') {
+      const sbLink = document.querySelector('.sb-nav [data-s="'+sec.section+'"]');
+      if (sbLink) {
+        sbLink.dataset.platHidden = secVisible ? '' : '1';
+        if (!secVisible) sbLink.style.display = 'none';
+      }
+      const mbnLink = document.querySelector('.mbn-item[data-s="'+sec.section+'"]');
+      if (mbnLink && !secVisible) mbnLink.style.display = 'none';
+    }
+    sec.tabs.forEach(tab => {
+      const tabKey = sec.section + '__' + tab.id;
+      const tabVisible = cfg[tabKey] !== false;
+      if (!tabVisible) {
+        const allBtns = document.querySelectorAll('#'+sec.section+'TabBar .tb, [onclick*="'+tab.id+'"]');
+        allBtns.forEach(btn => {
+          if (btn.getAttribute('onclick') && btn.getAttribute('onclick').includes(tab.id)) {
+            btn.style.display = 'none';
+          }
+        });
+      }
     });
   });
 }
