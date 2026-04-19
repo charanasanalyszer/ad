@@ -1715,8 +1715,8 @@
     <div class="page" id="page-generate">
       <div class="section-header">
         <div>
-          <div class="section-title">Generate Timetable</div>
-          <div class="section-sub">Auto-schedule using greedy constraint satisfaction</div>
+          <div class="section-title">⚡ Generate Timetable</div>
+          <div class="section-sub">Smart auto-schedule with constraints: max consecutive periods, subject sequencing rules, teacher limits &amp; shuffle regeneration</div>
         </div>
       </div>
       <div class="generate-panel">
@@ -1760,15 +1760,21 @@
           </div>
         </div>
       </div>
+      <!-- Constraint card will be injected here by timetable_patch.js -->
       <div class="card" style="margin-bottom:20px;">
-        <div style="font-size:11px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Generation Log</div>
-        <div id="es_genLog">Ready to generate. Configure options and click Generate.</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <div style="font-size:11px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Generation Log</div>
+          <button class="btn btn-sm btn-secondary" onclick="document.getElementById('es_genLog').innerHTML='Ready to generate.';document.getElementById('es_genProgress').style.width='0%';" style="font-size:10px;padding:3px 8px;">Clear Log</button>
+        </div>
+        <div id="es_genLog" style="max-height:200px;overflow-y:auto;font-size:12px;line-height:1.7;">Ready to generate. Configure options and click Generate.</div>
         <div class="progress-bar" style="margin-top:12px;"><div class="progress-fill" id="es_genProgress" style="width:0%"></div></div>
       </div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
         <button class="btn btn-primary" onclick="es_generateTimetable()" id="es_genBtn" style="font-size:15px;padding:12px 24px;">⚡ Generate Timetable</button>
+        <!-- 🔀 Shuffle button injected by timetable_patch.js -->
         <button class="btn btn-secondary" onclick="es_clearTimetable()">🗑️ Clear All</button>
         <button class="btn btn-success" onclick="es_showPage('view')">📅 View Result</button>
+        <button class="btn btn-secondary" onclick="es_showPage('allclass')">🗓️ All Streams</button>
       </div>
     </div>
 
@@ -3630,5 +3636,7 @@ if (typeof window.go === 'function') {
   };
 }
 </script>
+
+<script src="timetable_patch.js"></script>
 </body>
 </html>
