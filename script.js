@@ -9,7 +9,9 @@
 const PLATFORM_SCHOOLS_KEY  = 'ei_platform_schools';  // [{id,name,username,password,email,createdAt}]
 const PLATFORM_CREDS_KEY    = 'ei_platform_creds';    // {username, password} — set on first run
 const K_BROADCAST           = 'ei_platform_broadcast'; // platform broadcast message string
-const K_PLATFORM_EXAMS      = 'ei_platform_exams';     // [{id,title,subject,class,term,year,maxScore,notes,createdAt}]
+const K_PLATFORM_EXAMS      = 'ei_platform_exams';     // [{id,title,subject,class,term,year,maxScore,notes,createdAt,gradingSystemId,timetable}]
+const K_PLATFORM_SCHOOL_MARKS = 'ei_platform_school_marks'; // {examId: {schoolId: [{studentName,adm,subject,score}]}}
+const K_PLATFORM_RESULTS    = 'ei_platform_results';    // {examId: {analysed:bool, generatedAt, schoolSummaries:[{schoolId,schoolName,...}]}}
 let   platformSchools       = [];
 let   currentSchoolId       = null;
 
@@ -771,6 +773,8 @@ function enterPlatformDashboard() {
   ['subjects','classes','teachers','students','timetable','exambuilder','exams','reports','papers','fees','messaging','settings'].forEach(s=>{
     const el=document.querySelector('[data-s="'+s+'"]'); if(el) el.style.display='none';
   });
+  // Hide school-only exam tabs for platform admin
+  ['tbPlatformMarks','tbPlatformResults'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display='none'; });
   // Hide school nav items in mobile nav too for platform admin
   document.querySelectorAll('.mbn-item[data-s]').forEach(el=>{
     if (el.dataset.s !== 'platform') el.style.display='none';
@@ -824,6 +828,7 @@ function renderPlatformDashboard() {
   // Promote dropdown
   populatePromoteSchoolDropdown();
   // Platform exams
+  populatePlatExamGradingDropdown();
   renderPlatExamList();
   // Platform paper upload list
   renderPlatPapList();
@@ -908,9 +913,11 @@ function platUploadExam() {
   const year    = document.getElementById('platExamYear').value||'2026';
   const maxScore= parseInt(document.getElementById('platExamMax').value||'100');
   const notes   = (document.getElementById('platExamNotes').value||'').trim();
+  const gsId    = (document.getElementById('platExamGradingSystem')?.value||'').trim();
   const msgEl   = document.getElementById('platExamMsg');
   if(!title){ if(msgEl){msgEl.textContent='❌ Exam title is required.';msgEl.style.display='';msgEl.style.color='var(--danger)';} return; }
-  const exam={id:uid(),title,subject,class:cls,term,year,maxScore,notes,createdAt:new Date().toISOString(),isPlatformExam:true};
+  if(!gsId){ if(msgEl){msgEl.textContent='❌ Select a grading system to lock for this exam.';msgEl.style.display='';msgEl.style.color='var(--danger)';} return; }
+  const exam={id:uid(),title,subject,class:cls,term,year,maxScore,notes,gradingSystemId:gsId,timetable:[],createdAt:new Date().toISOString(),isPlatformExam:true};
   let plExams=[]; try{plExams=JSON.parse(localStorage.getItem(K_PLATFORM_EXAMS)||'[]');}catch{}
   plExams.unshift(exam); localStorage.setItem(K_PLATFORM_EXAMS,JSON.stringify(plExams));
   if(msgEl){msgEl.textContent='✅ Exam pushed to all schools!';msgEl.style.display='';msgEl.style.color='var(--success,#16a34a)';setTimeout(()=>{msgEl.style.display='none';},3500);}
@@ -918,25 +925,458 @@ function platUploadExam() {
   renderPlatExamList();
   showToast('Exam "'+title+'" pushed to all schools!','success');
 }
+
+function populatePlatExamGradingDropdown() {
+  const sel = document.getElementById('platExamGradingSystem'); if(!sel) return;
+  sel.innerHTML = '<option value="">— Select Grading System —</option>' +
+    gradingSystems.map(g=>`<option value="${g.id}">${g.name}${g.isDefault?' (Default)':''}</option>`).join('');
+}
+
 function renderPlatExamList() {
   const el=document.getElementById('platExamList'); if(!el) return;
   let plExams=[]; try{plExams=JSON.parse(localStorage.getItem(K_PLATFORM_EXAMS)||'[]');}catch{}
   if(!plExams.length){el.innerHTML='<p style="color:var(--muted);font-size:.82rem">No platform exams distributed yet.</p>';return;}
-  el.innerHTML='<div style="display:flex;flex-direction:column;gap:.5rem">'+plExams.map(e=>`
-    <div style="display:flex;align-items:center;gap:.75rem;padding:.55rem .85rem;border-radius:8px;border:1px solid var(--border);background:var(--surface)">
-      <div style="flex:1">
-        <div style="font-weight:700;font-size:.88rem">${e.title}</div>
-        <div style="font-size:.75rem;color:var(--muted)">${[e.subject,e.class,e.term,e.year].filter(Boolean).join(' · ')} · Max: ${e.maxScore}</div>
-        ${e.notes?'<div style="font-size:.75rem;color:var(--muted);margin-top:.15rem">'+e.notes+'</div>':''}
+  el.innerHTML='<div style="display:flex;flex-direction:column;gap:.75rem">'+plExams.map(e=>{
+    const gs = gradingSystems.find(g=>g.id===e.gradingSystemId);
+    const gsName = gs ? gs.name : '—';
+    const ttCount = (e.timetable||[]).length;
+    const marksData = getPlatformSchoolMarks(e.id);
+    const schoolsSubmitted = Object.keys(marksData).length;
+    const resultsData = getPlatformResults(e.id);
+    const analysed = resultsData && resultsData.analysed;
+    return `
+    <div style="border:1px solid var(--border);border-radius:10px;background:var(--surface);overflow:hidden">
+      <div style="display:flex;align-items:center;gap:.75rem;padding:.65rem .9rem;border-bottom:1px solid var(--border)">
+        <div style="flex:1">
+          <div style="font-weight:700;font-size:.88rem">${e.title}</div>
+          <div style="font-size:.75rem;color:var(--muted);margin-top:.15rem">${[e.subject,e.class,e.term,e.year].filter(Boolean).join(' · ')} · Max: ${e.maxScore}</div>
+          <div style="font-size:.73rem;margin-top:.2rem"><span style="background:#ede9fe;color:#7c3aed;padding:.1rem .45rem;border-radius:4px;font-weight:700">🎓 ${gsName}</span> <span style="background:#f0fdf4;color:#15803d;padding:.1rem .45rem;border-radius:4px;font-weight:700;margin-left:.3rem">📅 ${ttCount} session${ttCount!==1?'s':''}</span> <span style="background:#eff6ff;color:#1d4ed8;padding:.1rem .45rem;border-radius:4px;font-weight:700;margin-left:.3rem">🏫 ${schoolsSubmitted} school${schoolsSubmitted!==1?'s':''} submitted</span>${analysed?'<span style="background:#fef9c3;color:#854d0e;padding:.1rem .45rem;border-radius:4px;font-weight:700;margin-left:.3rem">✅ Results Published</span>':''}</div>
+        </div>
+        <button class="btn btn-outline btn-sm" style="font-size:.72rem" onclick="platOpenTimetableEditor('${e.id}')">📅 Timetable</button>
+        <button class="btn btn-primary btn-sm" style="font-size:.72rem;background:linear-gradient(135deg,#7c3aed,#1d4ed8)" onclick="platAnalyseExamResults('${e.id}')">📊 Analyse</button>
+        <button class="btn btn-danger btn-sm" style="font-size:.72rem" onclick="platDeleteExam('${e.id}')">Delete</button>
       </div>
-      <span style="font-size:.72rem;padding:.2rem .55rem;border-radius:999px;font-weight:700;background:#dcfce7;color:#15803d">All Schools</span>
-      <button class="btn btn-danger btn-sm" style="font-size:.72rem" onclick="platDeleteExam('${e.id}')">Delete</button>
-    </div>`).join('')+'</div>';
+      ${analysed ? `<div style="padding:.55rem .9rem;background:linear-gradient(90deg,rgba(250,204,21,.08),transparent);border-top:2px solid #fbbf24;font-size:.78rem">
+        <strong>📊 Results Published</strong> · Generated ${new Date(resultsData.generatedAt).toLocaleDateString()} · ${(resultsData.schoolSummaries||[]).length} schools · <button class="btn btn-outline btn-sm" style="font-size:.7rem;padding:.2rem .55rem" onclick="platViewPublishedResults('${e.id}')">View Results</button></div>` : ''}
+    </div>`;
+  }).join('')+'</div>';
 }
+
 function platDeleteExam(id) {
+  if(!confirm('Delete this platform exam? All submitted marks and results will also be removed.')) return;
   let plExams=[]; try{plExams=JSON.parse(localStorage.getItem(K_PLATFORM_EXAMS)||'[]');}catch{}
   plExams=plExams.filter(e=>e.id!==id); localStorage.setItem(K_PLATFORM_EXAMS,JSON.stringify(plExams));
+  // Clean up associated marks and results
+  try { const all=JSON.parse(localStorage.getItem(K_PLATFORM_SCHOOL_MARKS)||'{}'); delete all[id]; localStorage.setItem(K_PLATFORM_SCHOOL_MARKS,JSON.stringify(all)); } catch{}
+  try { const all=JSON.parse(localStorage.getItem(K_PLATFORM_RESULTS)||'{}'); delete all[id]; localStorage.setItem(K_PLATFORM_RESULTS,JSON.stringify(all)); } catch{}
   renderPlatExamList(); showToast('Exam removed','info');
+}
+
+// ─── Helpers for platform marks & results storage ───
+function getPlatformSchoolMarks(examId) {
+  try { const all=JSON.parse(localStorage.getItem(K_PLATFORM_SCHOOL_MARKS)||'{}'); return all[examId]||{}; } catch { return {}; }
+}
+function savePlatformSchoolMarks(examId, schoolId, marksArr) {
+  try {
+    const all=JSON.parse(localStorage.getItem(K_PLATFORM_SCHOOL_MARKS)||'{}');
+    if(!all[examId]) all[examId]={};
+    all[examId][schoolId]=marksArr;
+    localStorage.setItem(K_PLATFORM_SCHOOL_MARKS,JSON.stringify(all));
+  } catch(e){ console.error(e); }
+}
+function getPlatformResults(examId) {
+  try { const all=JSON.parse(localStorage.getItem(K_PLATFORM_RESULTS)||'{}'); return all[examId]||null; } catch { return null; }
+}
+function savePlatformResults(examId, data) {
+  try {
+    const all=JSON.parse(localStorage.getItem(K_PLATFORM_RESULTS)||'{}');
+    all[examId]=data;
+    localStorage.setItem(K_PLATFORM_RESULTS,JSON.stringify(all));
+  } catch(e){ console.error(e); }
+}
+
+// ─── TIMETABLE EDITOR (Platform Admin) ───
+function platOpenTimetableEditor(examId) {
+  let plExams=[]; try{plExams=JSON.parse(localStorage.getItem(K_PLATFORM_EXAMS)||'[]');}catch{}
+  const exam = plExams.find(e=>e.id===examId); if(!exam) return;
+  const overlay = document.getElementById('platTimetableOverlay');
+  if(!overlay) return;
+  overlay.dataset.examId = examId;
+  document.getElementById('platTTExamTitle').textContent = exam.title;
+  renderPlatTimetableRows(exam.timetable||[]);
+  overlay.style.display='flex';
+}
+function closePlatTimetableEditor() {
+  const overlay = document.getElementById('platTimetableOverlay');
+  if(overlay) overlay.style.display='none';
+}
+function renderPlatTimetableRows(rows) {
+  const tbody = document.getElementById('platTTBody'); if(!tbody) return;
+  if(!rows.length){ tbody.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:1.25rem;font-size:.83rem">No sessions added yet. Use the form below to add exam sessions.</td></tr>'; return; }
+  tbody.innerHTML = rows.map((r,i)=>`
+    <tr>
+      <td style="padding:.5rem .6rem;font-size:.82rem;font-weight:600">${r.date||'—'}</td>
+      <td style="padding:.5rem .6rem;font-size:.82rem">${r.day||'—'}</td>
+      <td style="padding:.5rem .6rem;font-size:.82rem">${r.time||'—'}</td>
+      <td style="padding:.5rem .6rem;font-size:.82rem;font-weight:600">${r.subject||'—'}</td>
+      <td style="padding:.5rem .6rem;font-size:.82rem">${r.venue||'—'}</td>
+      <td style="padding:.5rem .3rem;text-align:center"><button class="btn btn-danger btn-sm" style="font-size:.7rem;padding:.15rem .4rem" onclick="platRemoveTTRow(${i})">✕</button></td>
+    </tr>`).join('');
+}
+function platAddTTRow() {
+  const date    = (document.getElementById('platTTDate')?.value||'').trim();
+  const day     = (document.getElementById('platTTDay')?.value||'').trim();
+  const time    = (document.getElementById('platTTTime')?.value||'').trim();
+  const subject = (document.getElementById('platTTSubject')?.value||'').trim();
+  const venue   = (document.getElementById('platTTVenue')?.value||'').trim();
+  if(!subject){ showToast('Subject is required','error'); return; }
+  const examId = document.getElementById('platTimetableOverlay')?.dataset.examId; if(!examId) return;
+  let plExams=[]; try{plExams=JSON.parse(localStorage.getItem(K_PLATFORM_EXAMS)||'[]');}catch{}
+  const idx = plExams.findIndex(e=>e.id===examId); if(idx<0) return;
+  if(!plExams[idx].timetable) plExams[idx].timetable=[];
+  plExams[idx].timetable.push({date,day,time,subject,venue});
+  localStorage.setItem(K_PLATFORM_EXAMS,JSON.stringify(plExams));
+  renderPlatTimetableRows(plExams[idx].timetable);
+  ['platTTDate','platTTDay','platTTTime','platTTSubject','platTTVenue'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  showToast('Session added ✓','success');
+}
+function platRemoveTTRow(rowIdx) {
+  const examId = document.getElementById('platTimetableOverlay')?.dataset.examId; if(!examId) return;
+  let plExams=[]; try{plExams=JSON.parse(localStorage.getItem(K_PLATFORM_EXAMS)||'[]');}catch{}
+  const idx = plExams.findIndex(e=>e.id===examId); if(idx<0) return;
+  plExams[idx].timetable.splice(rowIdx,1);
+  localStorage.setItem(K_PLATFORM_EXAMS,JSON.stringify(plExams));
+  renderPlatTimetableRows(plExams[idx].timetable);
+}
+function platSaveTimetable() {
+  closePlatTimetableEditor();
+  renderPlatExamList();
+  showToast('Timetable saved ✓','success');
+}
+
+// ─── ANALYSE PLATFORM EXAM RESULTS (Admin only) ───
+function platAnalyseExamResults(examId) {
+  let plExams=[]; try{plExams=JSON.parse(localStorage.getItem(K_PLATFORM_EXAMS)||'[]');}catch{}
+  const exam = plExams.find(e=>e.id===examId); if(!exam) return;
+  const allMarks = getPlatformSchoolMarks(examId);
+  const schoolIds = Object.keys(allMarks);
+  if(!schoolIds.length){ showToast('No schools have submitted marks yet for this exam.','warning'); return; }
+
+  const gs = gradingSystems.find(g=>g.id===exam.gradingSystemId) || gradingSystems[0];
+  const schoolSummaries = schoolIds.map(schoolId => {
+    const school = platformSchools.find(s=>s.id===schoolId);
+    const rows = allMarks[schoolId] || [];
+    if(!rows.length) return null;
+    const scores = rows.map(r=>r.score).filter(s=>typeof s==='number'&&!isNaN(s));
+    if(!scores.length) return null;
+    const mean = scores.reduce((a,b)=>a+b,0)/scores.length;
+    const max  = exam.maxScore||100;
+    const passScore = max * 0.5;
+    const passed = scores.filter(s=>s>=passScore).length;
+    const passRate = (passed/scores.length*100).toFixed(1);
+    // Grade distribution
+    const gradeDist = {};
+    scores.forEach(s=>{ const g=getGradeFromSystem(s,max,gs); gradeDist[g.grade]=(gradeDist[g.grade]||0)+1; });
+    return {
+      schoolId, schoolName: school?.name||schoolId,
+      studentCount: scores.length, mean: parseFloat(mean.toFixed(2)),
+      passRate: parseFloat(passRate), passed, gradeDist,
+      highest: Math.max(...scores), lowest: Math.min(...scores)
+    };
+  }).filter(Boolean);
+
+  // Sort by mean score descending (ranking)
+  schoolSummaries.sort((a,b)=>b.mean-a.mean);
+  schoolSummaries.forEach((s,i)=>{ s.rank=i+1; });
+
+  const resultData = { analysed:true, examId, examTitle:exam.title, generatedAt:new Date().toISOString(), schoolSummaries, gradingSystemName:gs.name, maxScore:exam.maxScore };
+  savePlatformResults(examId, resultData);
+  renderPlatExamList();
+  showToast(`✅ Results analysed for ${schoolSummaries.length} school(s). Results are now visible to all schools.`,'success');
+  setTimeout(()=>platViewPublishedResults(examId), 400);
+}
+
+// ─── VIEW PUBLISHED RESULTS (Admin preview) ───
+function platViewPublishedResults(examId) {
+  const data = getPlatformResults(examId); if(!data||!data.analysed) { showToast('No published results for this exam.','info'); return; }
+  const overlay = document.getElementById('platResultsOverlay'); if(!overlay) return;
+  document.getElementById('platResTitle').textContent = data.examTitle + ' — Results';
+  document.getElementById('platResGenDate').textContent = 'Generated: ' + new Date(data.generatedAt).toLocaleString() + ' · Grading: ' + (data.gradingSystemName||'—');
+  const tbody = document.getElementById('platResBody');
+  const summaries = data.schoolSummaries||[];
+  if(!summaries.length){ tbody.innerHTML='<tr><td colspan="7" style="text-align:center;padding:1.5rem;color:var(--muted)">No data.</td></tr>'; }
+  else {
+    tbody.innerHTML = summaries.map(s=>`
+      <tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:.5rem .65rem;font-weight:700;color:${s.rank===1?'#b45309':s.rank===2?'#475569':s.rank===3?'#92400e':'var(--text)'}">${s.rank===1?'🥇':s.rank===2?'🥈':s.rank===3?'🥉':'#'+s.rank}</td>
+        <td style="padding:.5rem .65rem;font-weight:600">${s.schoolName}</td>
+        <td style="padding:.5rem .65rem;text-align:center">${s.studentCount}</td>
+        <td style="padding:.5rem .65rem;text-align:center;font-weight:700;color:${s.mean>=70?'#15803d':s.mean>=50?'#b45309':'#dc2626'}">${s.mean.toFixed(1)}</td>
+        <td style="padding:.5rem .65rem;text-align:center">${s.passRate}%</td>
+        <td style="padding:.5rem .65rem;text-align:center">${s.highest}</td>
+        <td style="padding:.5rem .65rem;text-align:center">${s.lowest}</td>
+      </tr>`).join('');
+  }
+  overlay.style.display='flex';
+}
+function closePlatResultsOverlay() {
+  const overlay = document.getElementById('platResultsOverlay'); if(overlay) overlay.style.display='none';
+}
+
+// ─── SCHOOL: Submit Marks for Platform Exam ───
+function renderPlatformExamMarkEntry() {
+  const sel = document.getElementById('platMarkExamSel'); if(!sel) return;
+  let plExams=[]; try{plExams=JSON.parse(localStorage.getItem(K_PLATFORM_EXAMS)||'[]');}catch{}
+  sel.innerHTML='<option value="">— Select Platform Exam —</option>'+plExams.map(e=>`<option value="${e.id}">${e.title} (${e.term} ${e.year})</option>`).join('');
+}
+function loadPlatformExamMarkTable() {
+  const examId = document.getElementById('platMarkExamSel')?.value; if(!examId) return;
+  let plExams=[]; try{plExams=JSON.parse(localStorage.getItem(K_PLATFORM_EXAMS)||'[]');}catch{}
+  const exam = plExams.find(e=>e.id===examId); if(!exam) return;
+  const gs = gradingSystems.find(g=>g.id===exam.gradingSystemId)||gradingSystems[0];
+  const container = document.getElementById('platMarkTableContainer'); if(!container) return;
+  const existingMarks = getPlatformSchoolMarks(examId)[currentSchoolId]||[];
+  const markMap = {};
+  existingMarks.forEach(r=>{ markMap[r.adm+':'+r.subject]=r.score; });
+  // Show/hide timetable download button
+  const ttWrap = document.getElementById('platMarkTTDownloadWrap');
+  if(ttWrap) { ttWrap.style.display = (exam.timetable&&exam.timetable.length) ? '' : 'none'; }
+  // Show grading lock notice
+  const notice = document.getElementById('platMarkGradingNotice');
+  if(notice){ notice.textContent = `🔒 Grading locked to: ${gs.name}`; notice.style.display=''; }
+  // Build a simple subject+student entry form
+  container.innerHTML = `
+    <p style="font-size:.8rem;color:var(--muted);margin-bottom:.75rem">Enter student marks below. Grading is automatically applied using <strong>${gs.name}</strong> as set by the platform.</p>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.75rem">
+      <div class="fg" style="flex:1;min-width:160px"><label style="font-size:.78rem">Subject</label><input type="text" id="platMarkSubject" placeholder="e.g. Mathematics" style="width:100%"/></div>
+      <div class="fg" style="flex:1;min-width:120px"><label style="font-size:.78rem">Adm No</label><input type="text" id="platMarkAdm" placeholder="e.g. 001" style="width:100%"/></div>
+      <div class="fg" style="flex:1;min-width:140px"><label style="font-size:.78rem">Student Name</label><input type="text" id="platMarkName" placeholder="Full name" style="width:100%"/></div>
+      <div class="fg" style="width:90px"><label style="font-size:.78rem">Score</label><input type="number" id="platMarkScore" min="0" max="${exam.maxScore}" placeholder="0-${exam.maxScore}" style="width:100%"/></div>
+      <div style="display:flex;align-items:flex-end"><button class="btn btn-primary btn-sm" onclick="platAddMarkRow('${examId}')">Add</button></div>
+    </div>
+    <div style="margin-bottom:.75rem;display:flex;gap:.5rem;flex-wrap:wrap">
+      <label class="btn btn-outline btn-sm" style="cursor:pointer;font-size:.78rem">📤 Upload Excel <input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="platHandleMarksExcel(this,'${examId}')"/></label>
+      <button class="btn btn-outline btn-sm" style="font-size:.78rem" onclick="platDownloadMarksTemplate('${examId}')">⬇️ Download Template</button>
+    </div>
+    <div id="platMarkRows" style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
+      <table style="width:100%;border-collapse:collapse">
+        <thead style="position:sticky;top:0;background:var(--surface);font-size:.78rem;z-index:1">
+          <tr style="border-bottom:2px solid var(--border)">
+            <th style="padding:.4rem .6rem;text-align:left">Adm No</th>
+            <th style="padding:.4rem .6rem;text-align:left">Name</th>
+            <th style="padding:.4rem .6rem;text-align:left">Subject</th>
+            <th style="padding:.4rem .6rem;text-align:center">Score</th>
+            <th style="padding:.4rem .6rem;text-align:center">Grade</th>
+            <th style="padding:.4rem .1rem"></th>
+          </tr>
+        </thead>
+        <tbody id="platMarkRowsBody"></tbody>
+      </table>
+    </div>
+    <div id="platMarkCount" style="font-size:.78rem;color:var(--muted);margin-top:.4rem"></div>
+    <div style="margin-top:.75rem;display:flex;gap:.75rem">
+      <button class="btn btn-primary" onclick="platSubmitSchoolMarks('${examId}')">✅ Submit Marks to Platform</button>
+    </div>`;
+  refreshPlatMarkRowsBody(examId);
+}
+function refreshPlatMarkRowsBody(examId) {
+  let plExams=[]; try{plExams=JSON.parse(localStorage.getItem(K_PLATFORM_EXAMS)||'[]');}catch{}
+  const exam = plExams.find(e=>e.id===examId); if(!exam) return;
+  const gs = gradingSystems.find(g=>g.id===exam.gradingSystemId)||gradingSystems[0];
+  const rows = getPlatformSchoolMarks(examId)[currentSchoolId]||[];
+  const tbody = document.getElementById('platMarkRowsBody'); if(!tbody) return;
+  if(!rows.length){ tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:1rem;font-size:.8rem">No marks entered yet.</td></tr>'; }
+  else {
+    tbody.innerHTML = rows.map((r,i)=>{
+      const g = getGradeFromSystem(r.score, exam.maxScore, gs);
+      return `<tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:.35rem .6rem;font-size:.8rem;font-family:var(--mono)">${r.adm}</td>
+        <td style="padding:.35rem .6rem;font-size:.8rem">${r.studentName}</td>
+        <td style="padding:.35rem .6rem;font-size:.8rem">${r.subject}</td>
+        <td style="padding:.35rem .6rem;text-align:center;font-weight:700">${r.score}</td>
+        <td style="padding:.35rem .6rem;text-align:center"><span class="badge ${g.cls}" style="font-size:.68rem">${g.grade}</span></td>
+        <td style="padding:.35rem .2rem;text-align:center"><button onclick="platRemoveMarkRow('${examId}',${i})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:.85rem">✕</button></td>
+      </tr>`;
+    }).join('');
+  }
+  const cnt = document.getElementById('platMarkCount');
+  if(cnt) cnt.textContent = rows.length ? `${rows.length} record${rows.length!==1?'s':''} ready to submit` : '';
+}
+function platAddMarkRow(examId) {
+  const subj  = (document.getElementById('platMarkSubject')?.value||'').trim();
+  const adm   = (document.getElementById('platMarkAdm')?.value||'').trim();
+  const name  = (document.getElementById('platMarkName')?.value||'').trim();
+  const score = parseInt(document.getElementById('platMarkScore')?.value||'');
+  let plExams=[]; try{plExams=JSON.parse(localStorage.getItem(K_PLATFORM_EXAMS)||'[]');}catch{}
+  const exam = plExams.find(e=>e.id===examId);
+  if(!subj||!adm||!name||isNaN(score)){ showToast('Fill all fields (subject, adm, name, score)','error'); return; }
+  if(exam && (score<0||score>exam.maxScore)){ showToast(`Score must be 0–${exam.maxScore}`,'error'); return; }
+  const existing = getPlatformSchoolMarks(examId)[currentSchoolId]||[];
+  const dupIdx = existing.findIndex(r=>r.adm===adm&&r.subject===subj);
+  if(dupIdx>-1) existing[dupIdx].score=score;
+  else existing.push({adm,studentName:name,subject:subj,score});
+  savePlatformSchoolMarks(examId,currentSchoolId,existing);
+  ['platMarkAdm','platMarkName','platMarkScore'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  refreshPlatMarkRowsBody(examId);
+}
+function platRemoveMarkRow(examId, idx) {
+  const existing = getPlatformSchoolMarks(examId)[currentSchoolId]||[];
+  existing.splice(idx,1);
+  savePlatformSchoolMarks(examId,currentSchoolId,existing);
+  refreshPlatMarkRowsBody(examId);
+}
+function platHandleMarksExcel(input, examId) {
+  const file=input.files[0]; if(!file) return;
+  let plExams=[]; try{plExams=JSON.parse(localStorage.getItem(K_PLATFORM_EXAMS)||'[]');}catch{}
+  const exam = plExams.find(e=>e.id===examId); if(!exam) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb=XLSX.read(e.target.result,{type:'array'}); const ws=wb.Sheets[wb.SheetNames[0]];
+      const data=XLSX.utils.sheet_to_json(ws);
+      if(!data.length){ showToast('File is empty','warning'); return; }
+      const existing = getPlatformSchoolMarks(examId)[currentSchoolId]||[];
+      let added=0, skipped=0;
+      data.forEach(row=>{
+        const adm  = String(row['AdmNo']||row['admno']||row['Adm No']||row['ADM']||'').trim();
+        const name = String(row['Name']||row['name']||row['Student']||row['StudentName']||'').trim();
+        const subj = String(row['Subject']||row['subject']||'').trim();
+        const sc   = parseInt(row['Score']||row['score']||row['Marks']||row['marks']||0);
+        if(!adm||!name||!subj||isNaN(sc)){ skipped++; return; }
+        const score = Math.min(Math.max(sc,0),exam.maxScore);
+        const dupIdx=existing.findIndex(r=>r.adm===adm&&r.subject===subj);
+        if(dupIdx>-1) existing[dupIdx].score=score;
+        else existing.push({adm,studentName:name,subject:subj,score});
+        added++;
+      });
+      savePlatformSchoolMarks(examId,currentSchoolId,existing);
+      refreshPlatMarkRowsBody(examId);
+      showToast(`${added} record(s) imported${skipped?' ('+skipped+' skipped)':''}  ✓`,'success');
+    } catch(err){ showToast('Error reading file: '+err.message,'error'); }
+  };
+  reader.readAsArrayBuffer(file); input.value='';
+}
+function platDownloadMarksTemplate(examId) {
+  let plExams=[]; try{plExams=JSON.parse(localStorage.getItem(K_PLATFORM_EXAMS)||'[]');}catch{}
+  const exam = plExams.find(e=>e.id===examId); if(!exam) return;
+  const data=[{AdmNo:'001',Name:'Student Name',Subject:exam.subject||'Mathematics',Score:75},{AdmNo:'002',Name:'Another Student',Subject:exam.subject||'Mathematics',Score:88}];
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data),'Marks');
+  XLSX.writeFile(wb,`platform_marks_template_${exam.title.replace(/\s+/g,'_')}.xlsx`);
+}
+function platSubmitSchoolMarks(examId) {
+  const rows = getPlatformSchoolMarks(examId)[currentSchoolId]||[];
+  if(!rows.length){ showToast('No marks to submit.','warning'); return; }
+  if(!confirm(`Submit ${rows.length} mark record(s) to the platform? The platform admin will use these for analysis.`)) return;
+  showToast(`✅ ${rows.length} mark records submitted to platform successfully!`,'success');
+  // Marks are already saved in storage, just confirm
+}
+
+// ─── SCHOOL: Download Timetable for Platform Exam ───
+function schoolDownloadPlatformTimetable(examId) {
+  let plExams=[]; try{plExams=JSON.parse(localStorage.getItem(K_PLATFORM_EXAMS)||'[]');}catch{}
+  const exam = plExams.find(e=>e.id===examId); if(!exam) return;
+  const tt = exam.timetable||[];
+  if(!tt.length){ showToast('No timetable has been set for this exam yet.','info'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+  const school = platformSchools.find(s=>s.id===currentSchoolId)||{name:''};
+  const pageW = 210; const margin=15;
+  // Header
+  doc.setFillColor(28,86,181); doc.rect(0,0,pageW,28,'F');
+  doc.setTextColor(255,255,255); doc.setFontSize(15); doc.setFont('helvetica','bold');
+  doc.text('EXAM TIMETABLE',pageW/2,11,{align:'center'});
+  doc.setFontSize(10); doc.setFont('helvetica','normal');
+  doc.text(exam.title,pageW/2,17,{align:'center'});
+  doc.setFontSize(8.5);
+  doc.text(`${exam.term} ${exam.year}  ·  Max Score: ${exam.maxScore}`,pageW/2,23,{align:'center'});
+  // School name
+  doc.setTextColor(30,30,30); doc.setFontSize(9); doc.setFont('helvetica','bold');
+  if(school.name) doc.text(school.name, margin, 36);
+  doc.setFont('helvetica','normal'); doc.setFontSize(8);
+  doc.text(`Downloaded: ${new Date().toLocaleDateString()}`, pageW-margin, 36, {align:'right'});
+  // Table header
+  let y=44; const colW=[28,22,28,70,32]; const cols=['Date','Day','Time','Subject / Paper','Venue'];
+  doc.setFillColor(240,244,255);
+  doc.rect(margin, y, pageW-2*margin, 8, 'F');
+  doc.setTextColor(30,30,90); doc.setFont('helvetica','bold'); doc.setFontSize(8.5);
+  let cx=margin;
+  cols.forEach((c,i)=>{ doc.text(c,cx+2,y+5.5); cx+=colW[i]; });
+  y+=8;
+  doc.setFont('helvetica','normal'); doc.setTextColor(30,30,30);
+  tt.forEach((r,i)=>{
+    if(i%2===0){ doc.setFillColor(250,252,255); doc.rect(margin,y,pageW-2*margin,8,'F'); }
+    doc.setFontSize(8); cx=margin;
+    [r.date||'—',r.day||'—',r.time||'—',r.subject||'—',r.venue||'—'].forEach((v,j)=>{ doc.text(String(v).substring(0,j===3?40:20),cx+2,y+5.3); cx+=colW[j]; });
+    y+=8;
+    if(y>270){ doc.addPage(); y=20; }
+  });
+  // Footer
+  doc.setFontSize(7.5); doc.setTextColor(120,120,120);
+  doc.text('This timetable is issued by the platform. Contact the platform admin for queries.',pageW/2,290,{align:'center'});
+  doc.save(`Timetable_${exam.title.replace(/\s+/g,'_')}.pdf`);
+}
+function schoolDownloadPlatformTimetableFromSel() {
+  const examId = document.getElementById('platMarkExamSel')?.value;
+  if(!examId){ showToast('Select an exam first','error'); return; }
+  schoolDownloadPlatformTimetable(examId);
+}
+
+// ─── SCHOOL: View Platform Results ───
+function renderSchoolPlatformResults() {
+  const container = document.getElementById('schoolPlatResultsContainer'); if(!container) return;
+  let plExams=[]; try{plExams=JSON.parse(localStorage.getItem(K_PLATFORM_EXAMS)||'[]');}catch{}
+  const examSel = document.getElementById('schoolPlatResExamSel');
+  if(examSel) {
+    const prev = examSel.value;
+    examSel.innerHTML='<option value="">— Select Platform Exam —</option>'+plExams.map(e=>`<option value="${e.id}">${e.title} (${e.term} ${e.year})</option>`).join('');
+    if(prev) examSel.value=prev;
+  }
+  const examId = examSel?.value;
+  if(!examId){ container.innerHTML='<p style="color:var(--muted);font-size:.83rem;padding:1rem 0">Select a platform exam above to view comparative results.</p>'; return; }
+  const data = getPlatformResults(examId);
+  if(!data||!data.analysed){ container.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--muted);font-size:.85rem"><div style="font-size:2rem;margin-bottom:.5rem">⏳</div><p>Results have not been published by the platform admin yet.<br>Check back after the exam analysis is complete.</p></div>'; return; }
+  const summaries = data.schoolSummaries||[];
+  const mySchool = platformSchools.find(s=>s.id===currentSchoolId);
+  const myEntry = summaries.find(s=>s.schoolId===currentSchoolId);
+  container.innerHTML = `
+    <div style="background:linear-gradient(135deg,#1e40af,#7c3aed);color:#fff;border-radius:10px;padding:1rem 1.25rem;margin-bottom:1rem">
+      <div style="font-size:.95rem;font-weight:800">${data.examTitle}</div>
+      <div style="font-size:.78rem;opacity:.85;margin-top:.2rem">Results published · ${new Date(data.generatedAt).toLocaleDateString()} · Grading: ${data.gradingSystemName||'Platform Standard'}</div>
+      ${myEntry?`<div style="margin-top:.65rem;background:rgba(255,255,255,.15);border-radius:8px;padding:.55rem .8rem;display:flex;gap:1.5rem;flex-wrap:wrap">
+        <div><div style="font-size:.72rem;opacity:.8">Your Rank</div><div style="font-size:1.35rem;font-weight:900">${myEntry.rank===1?'🥇 1st':myEntry.rank===2?'🥈 2nd':myEntry.rank===3?'🥉 3rd':'#'+myEntry.rank}</div></div>
+        <div><div style="font-size:.72rem;opacity:.8">Mean Score</div><div style="font-size:1.35rem;font-weight:900">${myEntry.mean.toFixed(1)}%</div></div>
+        <div><div style="font-size:.72rem;opacity:.8">Pass Rate</div><div style="font-size:1.35rem;font-weight:900">${myEntry.passRate}%</div></div>
+        <div><div style="font-size:.72rem;opacity:.8">Students</div><div style="font-size:1.35rem;font-weight:900">${myEntry.studentCount}</div></div>
+      </div>`:''}
+    </div>
+    <h4 style="font-size:.88rem;font-weight:700;margin-bottom:.65rem;color:var(--text)">📊 All Schools — Comparative Results</h4>
+    <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+      <thead><tr style="background:var(--primary-lt,#eff6ff)">
+        <th style="padding:.5rem .65rem;text-align:center">Rank</th>
+        <th style="padding:.5rem .65rem;text-align:left">School</th>
+        <th style="padding:.5rem .65rem;text-align:center">Students</th>
+        <th style="padding:.5rem .65rem;text-align:center">Mean</th>
+        <th style="padding:.5rem .65rem;text-align:center">Pass Rate</th>
+        <th style="padding:.5rem .65rem;text-align:center">Highest</th>
+        <th style="padding:.5rem .65rem;text-align:center">Lowest</th>
+      </tr></thead>
+      <tbody>
+      ${summaries.map(s=>{
+        const isMe = s.schoolId===currentSchoolId;
+        return `<tr style="border-bottom:1px solid var(--border);${isMe?'background:rgba(124,58,237,.06);font-weight:700;':''}">
+          <td style="padding:.45rem .65rem;text-align:center;font-weight:800;color:${s.rank===1?'#b45309':s.rank===2?'#475569':s.rank===3?'#92400e':'var(--muted)'}">${s.rank===1?'🥇':s.rank===2?'🥈':s.rank===3?'🥉':'#'+s.rank}</td>
+          <td style="padding:.45rem .65rem">${s.schoolName}${isMe?' <span style="background:#ede9fe;color:#7c3aed;font-size:.7rem;padding:.1rem .35rem;border-radius:4px">You</span>':''}</td>
+          <td style="padding:.45rem .65rem;text-align:center">${s.studentCount}</td>
+          <td style="padding:.45rem .65rem;text-align:center;color:${s.mean>=70?'#15803d':s.mean>=50?'#b45309':'#dc2626'}">${s.mean.toFixed(1)}</td>
+          <td style="padding:.45rem .65rem;text-align:center">${s.passRate}%</td>
+          <td style="padding:.45rem .65rem;text-align:center">${s.highest}</td>
+          <td style="padding:.45rem .65rem;text-align:center">${s.lowest}</td>
+        </tr>`;
+      }).join('')}
+      </tbody>
+    </table>
+    </div>`;
 }
 function platChangePassword() {
   const cur=document.getElementById('platCurPwd').value; const nw=document.getElementById('platNewPwd').value; const cf=document.getElementById('platConfPwd').value;
@@ -1777,6 +2217,12 @@ function launchApp() {
   if (mbnRestore) mbnRestore.style.display = '';
 
   document.getElementById('tbUser').textContent = '👤 ' + currentUser.name;
+
+  // Show Platform Marks and Platform Results tabs for school users
+  const tbPlatMarks = document.getElementById('tbPlatformMarks');
+  const tbPlatRes   = document.getElementById('tbPlatformResults');
+  if(tbPlatMarks) tbPlatMarks.style.display = '';
+  if(tbPlatRes)   tbPlatRes.style.display   = '';
 
   // Role-based: hide analyse if no rights (full check done in applyRoleBasedUI)
   const anBtn = document.getElementById('tbAnalyse');
@@ -7947,7 +8393,7 @@ function go(sec, el) {
   if (mainEl) mainEl.scrollTop = 0;
   if (window.innerWidth < 960) closeSidebar(); // auto-close on mobile only
   if (sec === 'dashboard')  renderDashboard();
-  if (sec === 'exams')      { populateExamDropdowns(); }
+  if (sec === 'exams')      { populateExamDropdowns(); renderPlatformExamMarkEntry(); renderSchoolPlatformResults(); }
   if (sec === 'reports')    { populateReportDropdowns(); }
   if (sec === 'messaging')  { loadMsgRecipients(); }
   if (sec === 'fees')       { initFeesSection(); }

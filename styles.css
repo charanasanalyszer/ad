@@ -2381,3 +2381,52 @@ button.tb-logout-btn:hover { background: #ef4444 !important; color: #fff !import
 @media (max-width: 600px) {
   #stuClassFilter, #stuStreamFilter, #stuGenderFilter { font-size:.78rem; padding:0 .4rem; }
 }
+
+/* ═══ Platform Exam — Central Exam Features ═══ */
+#tbPlatformMarks, #tbPlatformResults {
+  font-weight: 600;
+  position: relative;
+}
+#tbPlatformMarks::before {
+  content: 'NEW';
+  position: absolute;
+  top: -6px;
+  right: -4px;
+  font-size: .55rem;
+  background: #059669;
+  color: #fff;
+  padding: .05rem .3rem;
+  border-radius: 4px;
+  font-weight: 800;
+  letter-spacing: .03em;
+}
+#tbPlatformResults::before {
+  content: 'NEW';
+  position: absolute;
+  top: -6px;
+  right: -4px;
+  font-size: .55rem;
+  background: #7c3aed;
+  color: #fff;
+  padding: .05rem .3rem;
+  border-radius: 4px;
+  font-weight: 800;
+  letter-spacing: .03em;
+}
+/* Timetable overlay table row hover */
+#platTTBody tr:hover { background: rgba(124,58,237,.04); }
+/* Results overlay rank medal styling */
+#platResBody tr:first-child td:first-child,
+#platResBody .rank-gold { color: #b45309; font-weight: 800; }
+/* Platform marks lock notice animation */
+#platMarkGradingNotice {
+  animation: fadeSlideIn .3s ease;
+}
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+/* School platform results header card */
+#schoolPlatResultsContainer > div:first-child {
+  box-shadow: 0 4px 20px rgba(124,58,237,.15);
+}

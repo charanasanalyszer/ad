@@ -279,6 +279,8 @@
         <button class="tb" onclick="openExamTab('tabAnalyse',this)" id="tbAnalyse">Analyse</button>
         <button class="tb" onclick="openExamTab('tabMeritList',this)">Merit List</button>
         <button class="tb" onclick="openExamTab('tabSummaryAnalytics',this)" id="tbSummaryAnalytics">📊 Summary Analytics</button>
+        <button class="tb" onclick="openExamTab('tabPlatformMarks',this)" id="tbPlatformMarks" style="background:linear-gradient(135deg,rgba(5,150,105,.08),rgba(2,132,199,.08));border-color:#059669">📤 Platform Exam Marks</button>
+        <button class="tb" onclick="openExamTab('tabPlatformResults',this);renderSchoolPlatformResults()" id="tbPlatformResults" style="background:linear-gradient(135deg,rgba(124,58,237,.08),rgba(29,78,216,.08));border-color:#7c3aed">🏆 Platform Results</button>
       </div>
 
       <!-- Create Exam -->
@@ -630,6 +632,43 @@
             <p style="font-size:.8rem;color:var(--muted);margin-top:.5rem">Comprehensive class summaries: top students, subject rankings by mean, most improved, and per-stream breakdowns.</p>
           </div>
           <div id="smResults"></div>
+        </div>
+      </div>
+
+      <!-- ── TAB: Platform Exam Marks (School uploads marks for platform exam) ── -->
+      <div id="tabPlatformMarks" class="tab-panel">
+        <div class="card" style="margin-bottom:1.25rem;border-left:4px solid #059669">
+          <h3 style="display:flex;align-items:center;gap:.5rem">📤 Submit Marks for Platform Exam <span style="font-size:.72rem;background:#dcfce7;color:#15803d;padding:.15rem .5rem;border-radius:6px;font-weight:700">School Portal</span></h3>
+          <p style="font-size:.82rem;color:var(--muted);margin-bottom:1rem">Enter your school's student marks for a platform-wide exam. The grading system is locked by the platform administrator — you cannot change it.</p>
+          <div class="frow c2" style="margin-bottom:.75rem;align-items:flex-end">
+            <div class="fg">
+              <label>Select Platform Exam</label>
+              <select id="platMarkExamSel" onchange="loadPlatformExamMarkTable()" style="width:100%;height:36px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);padding:0 .7rem;font-family:inherit;font-size:.85rem">
+                <option value="">— Select Platform Exam —</option>
+              </select>
+            </div>
+            <div id="platMarkGradingNotice" style="display:none;font-size:.8rem;font-weight:700;color:#7c3aed;padding:.5rem .75rem;background:#ede9fe;border-radius:7px;white-space:nowrap"></div>
+          </div>
+          <!-- Timetable download button (only shows when exam has timetable) -->
+          <div id="platMarkTTDownloadWrap" style="display:none;margin-bottom:.75rem">
+            <button class="btn btn-outline btn-sm" style="border-color:#1d4ed8;color:#1d4ed8;font-size:.8rem" onclick="schoolDownloadPlatformTimetableFromSel()">📅 Download Exam Timetable (PDF)</button>
+          </div>
+          <div id="platMarkTableContainer"></div>
+        </div>
+      </div>
+
+      <!-- ── TAB: Platform Results (All schools, visible after admin publishes) ── -->
+      <div id="tabPlatformResults" class="tab-panel">
+        <div class="card" style="border-left:4px solid #7c3aed">
+          <h3 style="display:flex;align-items:center;gap:.5rem">🏆 Platform Exam Results <span style="font-size:.72rem;background:#ede9fe;color:#7c3aed;padding:.15rem .5rem;border-radius:6px;font-weight:700">All Schools</span></h3>
+          <p style="font-size:.82rem;color:var(--muted);margin-bottom:1rem">Comparative results for platform-wide exams across all registered schools. Results are published by the platform administrator after analysis.</p>
+          <div class="fg" style="margin-bottom:1rem;max-width:360px">
+            <label>Select Platform Exam</label>
+            <select id="schoolPlatResExamSel" onchange="renderSchoolPlatformResults()" style="width:100%;height:36px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);padding:0 .7rem;font-family:inherit;font-size:.85rem">
+              <option value="">— Select Platform Exam —</option>
+            </select>
+          </div>
+          <div id="schoolPlatResultsContainer"><p style="color:var(--muted);font-size:.83rem">Select an exam above to view results.</p></div>
         </div>
       </div>
 
@@ -2475,6 +2514,14 @@
           <label>Instructions / Notes (optional)</label>
           <textarea id="platExamNotes" rows="2" placeholder="Any special instructions for schools..." style="width:100%;resize:vertical;font-family:inherit;font-size:.88rem;padding:.55rem .75rem;border:1.5px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text)"></textarea>
         </div>
+        <!-- Grading System Lock -->
+        <div class="fg" style="margin-bottom:.75rem;border:2px solid #7c3aed;border-radius:9px;padding:.65rem .9rem;background:rgba(124,58,237,.04)">
+          <label style="font-size:.82rem;font-weight:700;color:#7c3aed">🔒 Lock Grading System for This Exam *</label>
+          <p style="font-size:.75rem;color:var(--muted);margin:.2rem 0 .5rem">Schools must use this grading system when entering marks. They cannot change it.</p>
+          <select id="platExamGradingSystem" style="width:100%;height:36px;border-radius:7px;border:1.5px solid #7c3aed;background:var(--surface);color:var(--text);padding:0 .7rem;font-family:inherit;font-size:.85rem">
+            <option value="">— Select Grading System —</option>
+          </select>
+        </div>
         <button class="btn btn-primary btn-sm" onclick="platUploadExam()" style="background:linear-gradient(135deg,#059669,#0284c7)">📤 Push Exam to All Schools</button>
         <div id="platExamMsg" style="display:none;margin-top:.75rem;font-size:.82rem;font-weight:600"></div>
 
@@ -2485,7 +2532,71 @@
         </div>
       </div>
 
-      <!-- Upload Papers to Schools -->
+      <!-- ── PLATFORM TIMETABLE EDITOR OVERLAY ── -->
+      <div id="platTimetableOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9000;align-items:center;justify-content:center;padding:1rem">
+        <div style="background:var(--surface);border-radius:14px;width:100%;max-width:700px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.35)">
+          <div style="background:linear-gradient(135deg,#1e40af,#7c3aed);color:#fff;padding:1rem 1.25rem;border-radius:14px 14px 0 0;display:flex;align-items:center;gap:.75rem">
+            <div style="flex:1"><div style="font-size:.95rem;font-weight:800">📅 Exam Timetable Editor</div><div id="platTTExamTitle" style="font-size:.8rem;opacity:.85;margin-top:.15rem"></div></div>
+            <button onclick="platSaveTimetable()" class="btn btn-sm" style="background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.3)">Save &amp; Close</button>
+            <button onclick="closePlatTimetableEditor()" style="background:none;border:none;color:#fff;font-size:1.2rem;cursor:pointer;padding:.1rem .3rem">✕</button>
+          </div>
+          <div style="padding:1.1rem 1.25rem">
+            <p style="font-size:.8rem;color:var(--muted);margin-bottom:1rem">Add exam sessions below. Schools can download this as a PDF timetable — it is only available to logged-in schools.</p>
+            <!-- Sessions table -->
+            <div style="overflow-x:auto;margin-bottom:1rem;border:1px solid var(--border);border-radius:8px">
+              <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+                <thead style="background:var(--primary-lt,#eff6ff)"><tr>
+                  <th style="padding:.4rem .6rem;text-align:left">Date</th>
+                  <th style="padding:.4rem .6rem;text-align:left">Day</th>
+                  <th style="padding:.4rem .6rem;text-align:left">Time</th>
+                  <th style="padding:.4rem .6rem;text-align:left">Subject / Paper</th>
+                  <th style="padding:.4rem .6rem;text-align:left">Venue</th>
+                  <th style="padding:.4rem .2rem"></th>
+                </tr></thead>
+                <tbody id="platTTBody"></tbody>
+              </table>
+            </div>
+            <!-- Add row form -->
+            <div style="border:1px dashed var(--border);border-radius:9px;padding:.85rem;background:var(--bg)">
+              <div style="font-size:.8rem;font-weight:700;color:var(--muted);margin-bottom:.6rem">➕ Add Session</div>
+              <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-end">
+                <div class="fg" style="min-width:110px"><label style="font-size:.75rem">Date</label><input type="date" id="platTTDate" style="width:100%;height:34px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);padding:0 .5rem;font-size:.83rem"/></div>
+                <div class="fg" style="min-width:90px"><label style="font-size:.75rem">Day</label><select id="platTTDay" style="width:100%;height:34px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:.83rem"><option value="">—</option><option>Monday</option><option>Tuesday</option><option>Wednesday</option><option>Thursday</option><option>Friday</option></select></div>
+                <div class="fg" style="min-width:100px"><label style="font-size:.75rem">Time</label><input type="text" id="platTTTime" placeholder="e.g. 8:00 AM" style="width:100%;height:34px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);padding:0 .5rem;font-size:.83rem"/></div>
+                <div class="fg" style="flex:1;min-width:140px"><label style="font-size:.75rem">Subject / Paper *</label><input type="text" id="platTTSubject" placeholder="e.g. Mathematics Paper 1" style="width:100%;height:34px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);padding:0 .5rem;font-size:.83rem"/></div>
+                <div class="fg" style="min-width:100px"><label style="font-size:.75rem">Venue</label><input type="text" id="platTTVenue" placeholder="e.g. Main Hall" style="width:100%;height:34px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);padding:0 .5rem;font-size:.83rem"/></div>
+                <button class="btn btn-primary btn-sm" onclick="platAddTTRow()" style="height:34px;white-space:nowrap">Add →</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── PLATFORM RESULTS PREVIEW OVERLAY (Admin) ── -->
+      <div id="platResultsOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9000;align-items:center;justify-content:center;padding:1rem">
+        <div style="background:var(--surface);border-radius:14px;width:100%;max-width:760px;max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.35)">
+          <div style="background:linear-gradient(135deg,#1e40af,#7c3aed);color:#fff;padding:1rem 1.25rem;border-radius:14px 14px 0 0;display:flex;align-items:center;gap:.75rem">
+            <div style="flex:1"><div id="platResTitle" style="font-size:.95rem;font-weight:800"></div><div id="platResGenDate" style="font-size:.78rem;opacity:.85;margin-top:.15rem"></div></div>
+            <button onclick="closePlatResultsOverlay()" style="background:none;border:none;color:#fff;font-size:1.2rem;cursor:pointer;padding:.1rem .3rem">✕</button>
+          </div>
+          <div style="padding:1.1rem 1.25rem">
+            <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:.83rem">
+              <thead style="background:var(--primary-lt,#eff6ff)"><tr>
+                <th style="padding:.5rem .65rem;text-align:center">Rank</th>
+                <th style="padding:.5rem .65rem;text-align:left">School</th>
+                <th style="padding:.5rem .65rem;text-align:center">Students</th>
+                <th style="padding:.5rem .65rem;text-align:center">Mean</th>
+                <th style="padding:.5rem .65rem;text-align:center">Pass Rate</th>
+                <th style="padding:.5rem .65rem;text-align:center">Highest</th>
+                <th style="padding:.5rem .65rem;text-align:center">Lowest</th>
+              </tr></thead>
+              <tbody id="platResBody"></tbody>
+            </table>
+            </div>
+          </div>
+        </div>
+      </div>
       <div class="card" style="margin-bottom:1.5rem;border-left:4px solid #7c3aed">
         <h3>📄 Upload Papers to Schools</h3>
         <p style="font-size:.82rem;color:var(--muted);margin-bottom:1rem">Upload exam papers or revision materials that will automatically appear in every school's <strong>Papers &amp; Resources</strong> section — either under <em>Termly Exams</em> or <em>Revision</em>.</p>
